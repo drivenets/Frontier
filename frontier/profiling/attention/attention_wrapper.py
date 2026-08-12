@@ -1,6 +1,6 @@
 from math import ceil
 import os
-from typing import List
+from typing import Any, Dict, List
 
 import numpy as np
 import torch
@@ -195,24 +195,37 @@ class AttentionWrapper:
         batch_size = attention_input.batch_size
         total_tokens = batch_size * num_tokens_per_seq
         query, key, value = self._make_qkv_tensors(total_tokens)
-        # Create SequenceMetadataProxy objects corresponding to AttentionInput
+        # Create SequenceMetadataProxy objects corresponding to AttentionInput.
+        # Each sequence gets a distinct, non-overlapping block range (same pattern
+        # as _get_true_mixed_input_tensors below) rather than every sequence
+        # reusing block_table=range(num_blocks). Backends that batch the cache
+        # write/read across the whole batch in one kernel call (e.g.
+        # AiterMlaAttentionWrapper's concat_and_cache_mla + mla_decode_fwd) would
+        # otherwise have every sequence alias the same physical cache slot,
+        # racing concurrent writes/reads to one address - this reproducibly
+        # crashed with GPU memory access faults at batch_size > 1.
         seq_metadata_list: List[SequenceMetadataProxy] = []
+        next_block_index = 0
         for _ in range(attention_input.batch_size):
             num_blocks = ceil(
                 (num_tokens_per_seq + attention_input.kv_cache_size) / self._block_size
             )
-            if num_blocks > self.max_num_blocks:
+            if next_block_index + num_blocks > self.max_num_blocks:
                 raise ValueError(
                     "Requested block_table size exceeds max_num_blocks: "
-                    f"num_blocks={num_blocks} max_num_blocks={self.max_num_blocks}"
+                    f"num_blocks={next_block_index + num_blocks} "
+                    f"max_num_blocks={self.max_num_blocks}"
                 )
             seq_metadata = SequenceMetadataProxy(
                 is_prompt=attention_input.is_prefill,
                 total_len=num_tokens_per_seq + attention_input.kv_cache_size,
                 processed_len=attention_input.kv_cache_size,
-                block_table=list(range(num_blocks)),
+                block_table=list(
+                    range(next_block_index, next_block_index + num_blocks)
+                ),
             )
             seq_metadata_list.append(seq_metadata)
+            next_block_index += num_blocks
         return seq_metadata_list, query, key, value, self.kv_cache
 
     def _get_mixed_input_tensors(
@@ -318,6 +331,43 @@ class AttentionWrapper:
 
         return seq_metadata_list, query, key, value, self.kv_cache
 
+    def _mla_result_fields(
+        self,
+        *,
+        batch_num_prefill_tokens: int,
+        batch_num_decode_tokens: int,
+        max_seqlen_q: int,
+        max_seqlen_k: int,
+    ) -> Dict[str, Any]:
+        """MLA-only columns every profiling path must emit.
+
+        ``LATENT_MLA_ATTENTION_FAMILY``'s required-column set (see
+        ``frontier.attention.profiling_mapping.get_required_profiling_columns``) is
+        a strict superset of the dense one, so the standard, mixed and true-mixed
+        paths all have to add these or the dataframe fails validation on save.
+        """
+        total_tokens = batch_num_prefill_tokens + batch_num_decode_tokens
+        return {
+            # MLA's runtime KV-head count is always 1 (a single shared
+            # compressed latent, not model_config.num_kv_heads' raw GQA-style
+            # value) - must match
+            # LATENT_MLA_ATTENTION_FAMILY.runtime_num_kv_heads_resolver, which
+            # the simulator's own filter queries directly.
+            "n_kv_head": 1,
+            "head_size": self._kv_lora_rank + self._qk_rope_head_dim,
+            "qk_nope_head_dim": self._model_config.qk_nope_head_dim,
+            "qk_rope_head_dim": self._qk_rope_head_dim,
+            "qk_head_dim": self._qk_head_dim,
+            "kv_lora_rank": self._kv_lora_rank,
+            "v_head_dim": self._v_head_dim,
+            "batch_num_tokens": total_tokens,
+            "batch_num_prefill_tokens": batch_num_prefill_tokens,
+            "batch_num_decode_tokens": batch_num_decode_tokens,
+            "max_seqlen_q": max_seqlen_q,
+            "max_seqlen_k": max_seqlen_k,
+            "num_actual_tokens": total_tokens,
+        }
+
     @torch.inference_mode()
     def profile(
         self,
@@ -385,7 +435,7 @@ class AttentionWrapper:
         seq_len_std = float(np.sqrt(seq_len_variance))
         seq_len_cv = seq_len_std / avg_seq_len if avg_seq_len != 0 else 0.0
 
-        return {
+        result = {
             "time_stats": time_stats,
             "n_embd": self._model_config.embedding_dim,
             "n_q_head": self._model_config.num_q_heads,
@@ -411,6 +461,24 @@ class AttentionWrapper:
             "seq_len_std": seq_len_std,
             "seq_len_cv": seq_len_cv,
         }
+
+        if self._uses_latent_mla:
+            is_prefill = attention_input.is_prefill
+            result.update(
+                self._mla_result_fields(
+                    batch_num_prefill_tokens=total_tokens if is_prefill else 0,
+                    batch_num_decode_tokens=0 if is_prefill else total_tokens,
+                    max_seqlen_q=max_seq_len,
+                    max_seqlen_k=(
+                        attention_input.kv_cache_size
+                        + attention_input.prefill_chunk_size
+                        if is_prefill
+                        else attention_input.kv_cache_size + 1
+                    ),
+                )
+            )
+
+        return result
 
     @torch.inference_mode()
     def profile_mixed(
@@ -505,7 +573,18 @@ class AttentionWrapper:
         
         # Add mixed-batch specific fields
         result.update(mixed_input.to_dict())
-        
+
+        if self._uses_latent_mla:
+            # Mixed batches are all-prefill, ragged only in sequence length.
+            result.update(
+                self._mla_result_fields(
+                    batch_num_prefill_tokens=mixed_input.total_tokens,
+                    batch_num_decode_tokens=0,
+                    max_seqlen_q=mixed_input.max_seq_len,
+                    max_seqlen_k=mixed_input.max_seq_len + mixed_input.kv_cache_size,
+                )
+            )
+
         return result
 
     @torch.inference_mode()
@@ -571,4 +650,37 @@ class AttentionWrapper:
             "attention_backend": self._attention_backend,
         }
         result.update(true_mixed_input.to_dict())
+
+        if self._uses_latent_mla:
+            # Query length is the per-sequence new-token count: the prefill
+            # chunk for prefill sequences, exactly 1 for decode sequences.
+            max_seqlen_q = max(
+                list(true_mixed_input.prefill_seq_lens)
+                + ([1] if true_mixed_input.decode_kv_cache_sizes else [])
+            )
+            max_seqlen_k = max(
+                [
+                    seq_len + kv_cache_size
+                    for seq_len, kv_cache_size in zip(
+                        true_mixed_input.prefill_seq_lens,
+                        true_mixed_input.prefill_kv_cache_sizes,
+                    )
+                ]
+                + [
+                    kv_cache_size + 1
+                    for kv_cache_size in true_mixed_input.decode_kv_cache_sizes
+                ]
+            )
+            result.update(
+                self._mla_result_fields(
+                    batch_num_prefill_tokens=true_mixed_input.total_prefill_tokens,
+                    batch_num_decode_tokens=true_mixed_input.total_decode_tokens,
+                    max_seqlen_q=max_seqlen_q,
+                    max_seqlen_k=max_seqlen_k,
+                )
+            )
+            # TrueMixedBatchInput.to_dict() carries no max_seq_len (dense
+            # profiling never required one on these rows); MLA validation does.
+            result["max_seq_len"] = max_seqlen_q
+
         return result

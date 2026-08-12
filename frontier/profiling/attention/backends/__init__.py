@@ -10,6 +10,8 @@ class AttentionBackend(Enum):
     FLASHINFER = "FLASHINFER"
     NO_OP = "NO_OP"
     TORCH_SDPA = "TORCH_SDPA"
+    TORCH_SDPA_MLA = "TORCH_SDPA_MLA"
+    AITER = "AITER"
 
 
 ATTENTION_BACKEND = AttentionBackend.NO_OP
@@ -63,6 +65,18 @@ def get_attention_wrapper():
         )
 
         return TorchSdpaAttentionWrapper.get_instance()
+    elif ATTENTION_BACKEND == AttentionBackend.TORCH_SDPA_MLA:
+        from frontier.profiling.attention.backends.torch_sdpa_mla_attention_wrapper import (
+            TorchSdpaMlaAttentionWrapper,
+        )
+
+        return TorchSdpaMlaAttentionWrapper.get_instance()
+    elif ATTENTION_BACKEND == AttentionBackend.AITER:
+        from frontier.profiling.attention.backends.aiter_mla_attention_wrapper import (
+            AiterMlaAttentionWrapper,
+        )
+
+        return AiterMlaAttentionWrapper.get_instance()
 
     raise ValueError(f"Unsupported attention backend: {ATTENTION_BACKEND}")
 
@@ -92,6 +106,18 @@ def __getattr__(name: str):
         )
 
         return TorchSdpaAttentionWrapper
+    if name == "TorchSdpaMlaAttentionWrapper":
+        from frontier.profiling.attention.backends.torch_sdpa_mla_attention_wrapper import (
+            TorchSdpaMlaAttentionWrapper,
+        )
+
+        return TorchSdpaMlaAttentionWrapper
+    if name == "AiterMlaAttentionWrapper":
+        from frontier.profiling.attention.backends.aiter_mla_attention_wrapper import (
+            AiterMlaAttentionWrapper,
+        )
+
+        return AiterMlaAttentionWrapper
     raise AttributeError(name)
 
 
@@ -101,6 +127,8 @@ __all__ = [
     "FlashinferAttentionWrapper",
     "NoOpAttentionWrapper",
     "TorchSdpaAttentionWrapper",
+    "TorchSdpaMlaAttentionWrapper",
+    "AiterMlaAttentionWrapper",
     "set_attention_backend",
     "get_attention_wrapper",
 ]

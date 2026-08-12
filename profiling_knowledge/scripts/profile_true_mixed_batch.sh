@@ -68,7 +68,14 @@ PP="${PP:-1}"                       # --max_pipeline_parallel_size
 # _get_available_gpus() has no ROCm fallback and fails outright without this.
 GPU_IDS="${GPU_IDS:-$(seq -s, 0 $((NUM_GPUS - 1)))}"
 
-ATTENTION_BACKEND="${ATTENTION_BACKEND:-TORCH_SDPA}"   # portable reference backend; see AITER_KERNELS.md for the (MLA-only, dense/GQA gap still open) alternative
+# TORCH_SDPA     = dense/GQA families (gpt-oss, qwen3, llama).
+# TORCH_SDPA_MLA = MLA families (deepseek-r1-0528 / deepseek-v3). TORCH_SDPA
+#                  refuses MLA outright, so this is not interchangeable -- pick
+#                  the one matching the model you passed to --models.
+# AITER          = real AMD MLA kernels; dispatches, but its prebuilt .so files
+#                  do not load/run against this host's torch build -- see
+#                  AITER_KERNELS.md's "prebuilt kernels vs. host torch" section.
+ATTENTION_BACKEND="${ATTENTION_BACKEND:-TORCH_SDPA}"
 PROFILE_METHOD="${PROFILE_METHOD:-cuda_event}"
 PRECISION="${PRECISION:-BF16}"
 
@@ -289,6 +296,23 @@ EOF
 if [ "$DRY_RUN" != "true" ]; then
   export CUDA_VISIBLE_DEVICES="$GPU_IDS"
   export HIP_VISIBLE_DEVICES="$GPU_IDS"   # ROCm's native equivalent, set for safety -- see INFRASTRUCTURE_MAP.md
+
+  # AITER JIT-compiles through hipcc and resolves it from $ROCM_HOME/bin/hipcc.
+  # On server1 /opt/rocm points at a partial 7.0.1 tree with no bin/ at all,
+  # while the real toolchain lives beside it (/opt/rocm-7.2.4, what
+  # `which hipcc` actually resolves to) -- so the default env fails the build
+  # with a bare "/opt/rocm/bin/hipcc: not found". Repoint it at whatever hipcc
+  # is really on PATH. Only AITER needs this; TORCH_SDPA* are pure torch.
+  if [ "$ATTENTION_BACKEND" = "AITER" ] && [ ! -x "${ROCM_HOME:-/opt/rocm}/bin/hipcc" ]; then
+    if hipcc_path="$(command -v hipcc)"; then
+      resolved_rocm="$(dirname "$(dirname "$(readlink -f "$hipcc_path")")")"
+      export ROCM_HOME="$resolved_rocm"
+      export ROCM_PATH="$resolved_rocm"
+      echo "Repointed ROCM_HOME/ROCM_PATH at $resolved_rocm (hipcc: $hipcc_path)"
+    else
+      echo "WARNING: --attention-backend AITER needs hipcc on PATH for JIT builds; none found." >&2
+    fi
+  fi
 fi
 
 cd "$REPO_ROOT"

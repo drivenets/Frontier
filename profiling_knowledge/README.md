@@ -60,7 +60,7 @@ every script supports `--dry-run` to print the resolved command(s) without touch
 
 | Script | What it does | Status |
 |---|---|---|
-| [`scripts/profile_true_mixed_batch.sh`](scripts/profile_true_mixed_batch.sh) | The gpt-oss/qwen3 true-mixed-batch sweep from [GPTOSS_TRUE_MIXED_BATCH_PROFILING.md](GPTOSS_TRUE_MIXED_BATCH_PROFILING.md#the-final-validated-sweep-command) — loops model × block_size, pins the known workload-shape dimensions, widens the scheduling-dependent ones, renames outputs after each run. | Validated (gpt-oss-20b/120b actually run; qwen3-a3b-30b-moe included by the same recipe but not independently re-run) |
+| [`scripts/profile_true_mixed_batch.sh`](scripts/profile_true_mixed_batch.sh) | The gpt-oss/qwen3 true-mixed-batch sweep from [GPTOSS_TRUE_MIXED_BATCH_PROFILING.md](GPTOSS_TRUE_MIXED_BATCH_PROFILING.md#the-final-validated-sweep-command) — loops model × block_size, pins the known workload-shape dimensions, widens the scheduling-dependent ones, renames outputs after each run. Also drives DeepSeek/MLA with `--attention-backend TORCH_SDPA_MLA`. | Validated (gpt-oss-20b/120b actually run; qwen3-a3b-30b-moe included by the same recipe but not independently re-run). DeepSeek/MLA true-mixed validated on server1 at smoke scale — all three CSVs pass `LATENT_MLA_ATTENTION_FAMILY` validation |
 | [`scripts/profile_deepseek_aiter_mla.sh`](scripts/profile_deepseek_aiter_mla.sh) | DeepSeek MLA attention profiling via real AITER kernels (or the portable `TORCH_SDPA_MLA` fallback) — preflight-checks AITER's checkout-dependent availability before running. See [AITER_KERNELS.md](AITER_KERNELS.md). | Preflight check validated; default grid is sanity-check scale, not a validated production sweep — widen deliberately |
 
 ## Quick index by question
@@ -81,6 +81,11 @@ every script supports `--dry-run` to print the resolved command(s) without touch
 ## Still-open gaps (not fixed, tracked so they don't get re-discovered)
 
 - No dense/GQA AITER attention wrapper — [AITER_KERNELS.md](AITER_KERNELS.md).
+- AITER's prebuilt kernels don't run against the host torch (`2.11.0.dev20251216+rocm7.0`) on
+  server1 *or* server3 — prefill hits a `set_stride` error inside `module_ps_metadata.so`, decode
+  fails to load with a `c10` undefined symbol, and rebuilding fails to compile. `TORCH_SDPA_MLA`
+  is the only executable MLA backend today —
+  [AITER_KERNELS.md](AITER_KERNELS.md#prebuilt-aiter-kernels-vs-host-torch-the-real-blocker-today).
 - Open-loop (Poisson-rate) real logs can't run through the validation tool yet —
   [VALIDATION_TOOL.md](VALIDATION_TOOL.md#known-gap-open-loop-poisson-rate-logs-arent-runnable-yet).
 - gpt-oss real captures under-generate tokens relative to the intended workload, especially on

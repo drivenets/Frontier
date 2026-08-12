@@ -11,12 +11,21 @@
 #
 # IMPORTANT - checkout-dependent, unlike the true-mixed-batch script:
 #   The AITER backend (AttentionBackend.AITER -> AiterMlaAttentionWrapper)
-#   only exists on server3 (amd-mi355x-3) and server8 (amd-mi355x-8), in
-#   ~/frontier-work/Frontier. It is NOT present in this checkout, in
-#   /home/dn/driventes-frontier, or on server1 -- see
-#   ../INFRASTRUCTURE_MAP.md for the full checkout inventory. This script
-#   preflight-checks for it and fails fast with a clear pointer instead of
-#   letting a real run crash deep inside backend dispatch.
+#   originally existed only on server3 (amd-mi355x-3) and server8
+#   (amd-mi355x-8), in ~/frontier-work/Frontier. As of 2026-08-11 it is also
+#   present in this checkout (ported from server3, along with
+#   TORCH_SDPA_MLA) -- see ../INFRASTRUCTURE_MAP.md. The preflight below still
+#   guards the other checkouts, which have neither.
+#
+# IMPORTANT - AITER dispatches here but its kernels do NOT execute:
+#   aiter's prebuilt .so files were built for the sglang container's torch, not
+#   the host's (2.11.0.dev20251216+rocm7.0). Prefill dies inside
+#   module_ps_metadata.so ("set_stride is not allowed on a Tensor created from
+#   .data or .detach()"), decode fails to load with a c10 undefined symbol, and
+#   a source rebuild fails to compile under ROCm 7.2.4's clang. Confirmed
+#   identical on server3, so this is a stack mismatch, not checkout drift --
+#   see ../AITER_KERNELS.md. Use --attention-backend TORCH_SDPA_MLA until it's
+#   run inside the matching container.
 #
 # Also NOTE (unlike profile_true_mixed_batch.sh's grid, which was run and
 # sanity-checked end-to-end -- see GPTOSS_TRUE_MIXED_BATCH_PROFILING.md): the

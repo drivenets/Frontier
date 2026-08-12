@@ -10,6 +10,15 @@ real-vs-simulated mismatch you see in a comparison report.
 
 ## What exists today, and exactly where
 
+> **Updated 2026-08-11 — this section's "no MLA backend on server1" claim is now out of date for
+> `server1:~/frontier_work/drivenetsfrontier`.** Both MLA wrappers
+> (`torch_sdpa_mla_attention_wrapper.py`, `aiter_mla_attention_wrapper.py`) were ported into that
+> checkout from `server3`, along with the `attention_wrapper.py` / `main.py` plumbing they need.
+> `TORCH_SDPA_MLA` is verified working there end to end, including true-mixed batches. `AITER`
+> dispatches correctly but **cannot execute on that host's torch** — see
+> [Prebuilt AITER kernels vs. host torch](#prebuilt-aiter-kernels-vs-host-torch-the-real-blocker-today)
+> below, which is a stack-level blocker, not a checkout-drift one.
+
 Frontier's own `frontier.profiling.attention.main --attention_backend` choices are
 `{FLASHINFER, NO_OP, TORCH_SDPA, FLASHINFER_MLA}` — **no AITER option** — on every checkout we
 have direct control over: `/home/dn/FrontierBase`, `/home/dn/driventes-frontier`, and
@@ -49,6 +58,56 @@ This is real, careful, already-validated work, not a stub. Reading its own docst
   (`mla_fp8_prefill_attn` → `aiter.mla_prefill_ps_asm_fwd`), not the generic
   `aiter.mla_prefill_fwd` (which asserts a shape constraint this model's real dimensions violate:
   `qk_head_dim=192 != kv_lora_rank+qk_rope_head_dim=576`).
+
+## Prebuilt AITER kernels vs. host torch (the real blocker today)
+
+Having the wrapper is not enough: the `aiter` Python package and its compiled kernels must also
+match the torch you run against. On `server1` (`torch 2.11.0.dev20251216+rocm7.0`) this was
+walked all the way down, and the result is that **no AITER attention profiling is runnable on
+the host stack right now — on server1 or server3**:
+
+| Thing tried | Where it came from | Result |
+|---|---|---|
+| `aiter` from `server3:/usr/local/lib/python3.10/dist-packages` | pip install, `v0.0.0` | Imports, JIT-builds fine, but has **no `get_ps_metadata_info_v1`** (only `get_mla_metadata_info_v1`) — the wrapper's prefill path needs it |
+| `aiter` from `server3:~/dn_code/aiter` | source checkout | Has the ps-metadata API, but `aiter/__init__.py` swallows its own import errors, leaving `aiter.dtypes` unset → `aiter.mla` unimportable |
+| `aiter` from `server3:~/gpt_oss_rebase/aiter` | the sglang-image lineage the wrapper was written against | Has **every** symbol the wrapper needs (`dtypes`, `get_ps_metadata_info_v1`, `get_ps_metadata_v1`, `mla_prefill_ps_asm_fwd`, `mla_reduce_v1`) |
+
+With that last one in place the wrapper dispatches correctly and then dies inside the kernels
+themselves:
+
+- **Prefill**: `aiter.get_ps_metadata_v1` → `RuntimeError: set_stride is not allowed on a Tensor
+  created from .data or .detach()`, raised from inside `module_ps_metadata.so`. Not an
+  inference-mode artifact — it reproduces under plain eager, `no_grad`, and `inference_mode`
+  alike, and equally when bypassing aiter's torch-custom-op layer and calling the raw pybind
+  module directly. **The identical probe fails the same way on server3**, using server3's own
+  aiter checkout and its own `~/aiter_jit_cache` — so this is not local-port damage.
+- **Decode**: `module_mla_asm.so` fails to load at all —
+  `undefined symbol: _ZN3c103hip28c10_hip_check_implementationEiPKcS2_ib`, i.e. it was linked
+  against a different `c10` ABI than the installed torch.
+- **Rebuilding from source doesn't help**: `module_ps_metadata`'s JIT build fails to compile
+  `csrc/include/custom_all_reduce.cuh` under ROCm 7.2.4's clang (`no template named 'packed_t'`,
+  cascading `unknown type name 'P'`).
+
+The prebuilt `.so` files date from March and were built for the
+`lmsysorg/sglang:v0.5.11-rocm700-mi35x` container's torch. Closing this means running the
+profiling **inside that container** (where kernels and torch match), or rebuilding aiter against
+the host torch — which is blocked on the CK/compiler mismatch above. Until one of those happens,
+`TORCH_SDPA_MLA` is the only executable MLA backend, on any of these machines.
+
+Two smaller traps found on the way, worth keeping:
+
+- **`hipcc` discovery**: aiter resolves the compiler as `$ROCM_HOME/bin/hipcc`. On server1
+  `ROCM_HOME=/opt/rocm` → `/opt/rocm-7.0.1`, a partial tree with no `bin/` at all, while the real
+  toolchain (what `which hipcc` resolves to) is `/opt/rocm-7.2.4`. Every JIT build fails with a
+  bare `/opt/rocm/bin/hipcc: not found` until you `export ROCM_HOME=/opt/rocm-7.2.4`
+  (`profile_true_mixed_batch.sh` now does this automatically for `--attention-backend AITER`).
+- **Prebuilt module cache**: aiter looks for `module_*.so` in `$AITER_JIT_DIR` (falling back to
+  its own `aiter/jit/` dir when writable). server3 keeps a populated one at `~/aiter_jit_cache`;
+  a mirror now lives at `server1:/home/dn/aiter_jit_cache_frontier`. Point `AITER_JIT_DIR` at a
+  directory **you own** — server1's pre-existing `~/aiter_jit_cache` has a root-owned `build/`
+  subdirectory, and the resulting `PermissionError` surfaces as the very confusing
+  `ImportError: cannot import name 'dtypes' from 'aiter'`, because `aiter/__init__.py` swallows
+  the real exception.
 
 ## The gap: nothing exists for dense/GQA models
 

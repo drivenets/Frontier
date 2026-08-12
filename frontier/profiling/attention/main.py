@@ -56,6 +56,8 @@ except ImportError:
     ray = None
 
 from frontier.attention.families import DENSE_ATTENTION_FAMILY
+from frontier.attention.model_binding import bind_attention_family
+from frontier.attention.ops import AttentionFamilySpec, AttentionMemoryLayout
 from frontier.attention.profiling_mapping import (
     validate_attention_profiling_dataframe,
 )
@@ -874,6 +876,7 @@ def _prepare_standard_attention_output_dataframe(
     model_architecture_profile: str,
     quant_signature: str,
     measurement_type: str,
+    attention_family: "AttentionFamilySpec" = DENSE_ATTENTION_FAMILY,
 ) -> pd.DataFrame:
     output_df = _attach_attention_output_metadata(
         df,
@@ -883,12 +886,28 @@ def _prepare_standard_attention_output_dataframe(
         quant_signature=quant_signature,
         measurement_type=measurement_type,
     )
+    _mark_native_mla_profiling_rows(output_df, attention_family)
     validate_attention_profiling_dataframe(
         output_df,
-        DENSE_ATTENTION_FAMILY,
+        attention_family,
         measurement_type=measurement_type,
     )
     return output_df
+
+
+def _mark_native_mla_profiling_rows(
+    output_df: pd.DataFrame,
+    attention_family: "AttentionFamilySpec",
+) -> None:
+    """Tag MLA rows produced by a native profiling run (not a vLLM import).
+
+    ``is_mla_profile_import`` is a required MLA column; rows imported via
+    ``--vllm_mla_cuda_op_log`` are marked True by the importer itself, so
+    anything measured here is False. Applied to every partition (standard,
+    mixed, true-mixed) so the concatenated combined CSV has no NaN holes in it.
+    """
+    if attention_family.memory_layout is AttentionMemoryLayout.LATENT_MLA:
+        _fill_metadata_column(output_df, "is_mla_profile_import", False)
 
 
 def _resolve_vllm_mla_model_architecture_profile(
@@ -1624,6 +1643,8 @@ def main():
 
     if args.attention_backend == AttentionBackend.FLASHINFER.value:
         require_profiling_dependencies("attention", ("torch", "vllm", "flashinfer"))
+    elif args.attention_backend == AttentionBackend.AITER.value:
+        require_profiling_dependencies("attention", ("torch", "aiter"))
     else:
         require_profiling_dependencies("attention", ("torch",))
 
@@ -1935,6 +1956,7 @@ def main():
         )
         quant_signature = model_config.get_quant_signature()
         measurement_type = profile_method_to_measurement_type(args.profile_method).value
+        attention_family = bind_attention_family(model_config).family
 
         # Save standard attention results
         if not result_df.empty:
@@ -1945,6 +1967,7 @@ def main():
                 model_architecture_profile=model_architecture_profile,
                 quant_signature=quant_signature,
                 measurement_type=measurement_type,
+                attention_family=attention_family,
             )
             output_file = build_profile_method_output_path(
                 output_root=args.output_dir,
@@ -1967,6 +1990,7 @@ def main():
                 quant_signature=quant_signature,
                 measurement_type=measurement_type,
             )
+            _mark_native_mla_profiling_rows(mixed_result_df, attention_family)
             mixed_output_file = build_profile_method_output_path(
                 output_root=args.output_dir,
                 profiling_type="compute",
@@ -1988,6 +2012,7 @@ def main():
                 quant_signature=quant_signature,
                 measurement_type=measurement_type,
             )
+            _mark_native_mla_profiling_rows(true_mixed_result_df, attention_family)
             true_mixed_output_file = build_profile_method_output_path(
                 output_root=args.output_dir,
                 profiling_type="compute",

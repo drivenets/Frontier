@@ -26,9 +26,20 @@ switching between them.
   up over this session. `/home/dn/driventes-frontier` had an *empty* `tools/validation/`
   (only `__pycache__`) until it was copied over — that checkout was sitting at commit
   `d613032 Merge remote-tracking branch 'upstream/main'`, predating all of this work.
-- **The AITER MLA wrapper** (`frontier/profiling/attention/backends/aiter_mla_attention_wrapper.py`):
-  only on `server3` and `server8`. Not on `server1`, not in either local checkout. See
-  [AITER_KERNELS.md](AITER_KERNELS.md).
+- **The MLA attention wrappers** (`backends/torch_sdpa_mla_attention_wrapper.py`,
+  `backends/aiter_mla_attention_wrapper.py`): originally only on `server3` and `server8`.
+  **As of 2026-08-11 both are also in `server1:~/frontier_work/drivenetsfrontier`**, ported from
+  server3 together with the pieces they depend on — the `AttentionBackend.{TORCH_SDPA_MLA,AITER}`
+  enum values and dispatch, `attention_wrapper.py`'s per-sequence non-overlapping block ranges
+  and MLA result columns, and `main.py`'s attention-family plumbing so MLA dataframes validate
+  against `LATENT_MLA_ATTENTION_FAMILY` instead of the dense one. Still missing from the other
+  checkouts. `TORCH_SDPA_MLA` runs there; `AITER` dispatches but its prebuilt kernels do not load
+  against the host torch — see [AITER_KERNELS.md](AITER_KERNELS.md).
+- **`aiter` itself on `server1`**: not installed system-wide. The sglang-lineage source checkout
+  is mirrored at `/home/dn/aiter_src_sglang` (put on `sys.path` by
+  `~/.local/lib/python3.10/site-packages/aiter_src.pth`), with prebuilt kernel modules mirrored
+  at `/home/dn/aiter_jit_cache_frontier`. Enough to import and dispatch; not enough to execute,
+  per the doc above.
 - **gpt-oss model configs** (`data/config/models/openai__gpt-oss-{120b,20b}.json`): were missing
   entirely on `server3`'s checkout the first time profiling was attempted there — copied over
   from `/home/dn/FrontierBase`. Worth checking on any *new* checkout before assuming a profiling
