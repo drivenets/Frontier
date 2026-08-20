@@ -70,6 +70,10 @@ _RESULT_FIELD_MAP = {
     "Maximum request concurrency": ("concurrency_reported", int),
     "Successful requests": ("successful_requests", int),
     "Failed requests": ("failed_requests", int),
+    # vLLM open-loop only -- the rate it was actually configured to target, distinct from
+    # "Traffic request rate:"/request_rate_reported which vLLM prints as the raw --request-rate
+    # argument (often "inf" even in open-loop sweeps that cap effective rate elsewhere).
+    "Request rate configured (RPS)": ("request_rate_configured_rps", float),
     "Benchmark duration (s)": ("benchmark_duration_s", float),
     "Total input tokens": ("total_input_tokens", int),
     "Total generated tokens": ("total_generated_tokens", int),
@@ -120,6 +124,7 @@ class BenchmarkResult:
 
     backend_reported: Optional[str] = None
     request_rate_reported: Optional[float] = None
+    request_rate_configured_rps: Optional[float] = None
     concurrency_reported: Optional[int] = None
     successful_requests: Optional[int] = None
     failed_requests: Optional[int] = None  # vLLM only; sglang's block has no equivalent line
@@ -367,14 +372,37 @@ def parse_config_txt(text: str) -> RunConfig:
     )
 
 
-def engine_label(config: Optional[RunConfig]) -> str:
-    """Best-effort "sglang"/"vLLM" label from config.txt's bench_container, for report titles."""
+def engine_label(config: Optional[RunConfig], sample: Optional[BenchmarkResult] = None) -> str:
+    """Best-effort "sglang"/"vLLM" label for report titles.
+
+    Deliberately never trusts directory-path naming (e.g. a "sglang/" folder) -- surveying the
+    actual captures in tools/inference_bench/ found that unreliable: every run dir under
+    qwen/sglang/closed-loop/ is really vLLM data, and oss-20b/sglang/closed-loop/ mixes both
+    engines side by side. Precedence, most to least direct:
+      1. `sample`'s own "Backend:" result-block line (backend_reported) -- sglang always prints
+         one; vLLM never does, so its presence/absence is close to definitive on its own.
+      2. config.txt's bench_container substring match (works when a config.txt exists at all,
+         which the bare combined .log files -- sample only, no config -- don't have).
+      3. vLLM's tell-tale "Failed requests" field, present only in its bench_serving output,
+         as a last-resort signal when neither of the above says anything.
+    """
+    if sample is not None and sample.backend_reported:
+        reported = sample.backend_reported.lower()
+        if "sglang" in reported:
+            return "sglang"
+        if "vllm" in reported:
+            return "vLLM"
+
     container = (config.bench_container if config else None) or ""
     container = container.lower()
     if "sglang" in container:
         return "sglang"
     if "vllm" in container:
         return "vLLM"
+
+    if sample is not None and sample.failed_requests is not None:
+        return "vLLM"
+
     return "unknown engine"
 
 
