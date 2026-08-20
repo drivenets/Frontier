@@ -25,6 +25,8 @@ class SimResult:
 
     successful_requests: Optional[int] = None
     benchmark_duration_s: Optional[float] = None
+    total_input_tokens: Optional[int] = None
+    total_generated_tokens: Optional[int] = None
     request_throughput_req_s: Optional[float] = None
     input_token_throughput_tok_s: Optional[float] = None
     output_token_throughput_tok_s: Optional[float] = None
@@ -82,6 +84,16 @@ def extract_sim_result(
         else None
     )
 
+    # total_tokens_processed covers prefill+decode combined; there's no separate "total prefill
+    # tokens" field, so total input is derived the same way input_tok_s is above.
+    total_tokens_processed = throughput.get("total_tokens_processed")
+    total_decode_tokens = throughput.get("total_decode_tokens_generated")
+    total_input_tokens = (
+        total_tokens_processed - total_decode_tokens
+        if total_tokens_processed is not None and total_decode_tokens is not None
+        else None
+    )
+
     req_s = throughput.get("requests_per_second")
     e2e_mean_ms = e2e.get("mean")
     achieved_concurrency = req_s * e2e_mean_ms / 1000.0 if req_s is not None and e2e_mean_ms is not None else None
@@ -93,6 +105,8 @@ def extract_sim_result(
         calibrated_qps=calibrated_qps,
         successful_requests=meta.get("completed_requests"),
         benchmark_duration_s=throughput.get("total_duration_seconds"),
+        total_input_tokens=total_input_tokens,
+        total_generated_tokens=total_decode_tokens,
         request_throughput_req_s=req_s,
         input_token_throughput_tok_s=input_tok_s,
         output_token_throughput_tok_s=decode_tokens_per_second,

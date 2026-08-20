@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import math
 import subprocess
 import sys
 from pathlib import Path
 from typing import List
 
-from tools.validation.compare_plots import write_html_report
+from tools.validation.compare_plots import RunIdentity, write_html_report
 from tools.validation.frontier_cli_translator import SimPoint, Topology, build_sweep
 from tools.validation.metrics_extractor import SimResult, extract_sim_result, find_run_dir
 from tools.validation.real_log_aggregator import load_and_aggregate
@@ -49,7 +50,25 @@ def main() -> None:
     parser.add_argument("--moe-ep", type=int, default=1)
     parser.add_argument("--pipeline-stages", type=int, default=1)
     parser.add_argument("--num-replicas", type=int, default=1)
-    parser.add_argument("--cc-backend", default="analytical", help="e.g. analytical or vidur")
+    parser.add_argument(
+        "--cc-backend", default="collective_sim",
+        choices=["collective_sim", "astra_sim_analytical", "analytical", "vidur", "aiconfigurator"],
+        help="Collective-communication cost model. Default collective_sim: the real compiled "
+             "htsim-based topology simulator (frontier/cc_backend/backends/collective-sim/, a "
+             "git submodule -- must be built first, see its README) -- meaningfully more "
+             "accurate than the alternatives below for any topology with attn-tp/attn-dp/"
+             "moe-tp/moe-ep > 1 (irrelevant for single-GPU runs, where every backend here "
+             "short-circuits collective cost to 0 the same way). 'analytical' is a closed-form "
+             "bandwidth+latency formula that ignores real profiled network data entirely -- "
+             "confirmed to badly misestimate TP=8 collective cost on mi355x (a ~37ms constant "
+             "regardless of actual data size); keep it only as a cheap fallback when "
+             "collective-sim isn't built. 'astra_sim_analytical' is a similarly-named but "
+             "unrelated pure-Python formula backend (no compiled dependency, easy to confuse "
+             "with collective_sim/htsim -- see profiling_knowledge for the distinction). "
+             "'vidur' trains sklearn models on data/profiling/network/{NETWORK_DEVICE}/"
+             "{all_reduce,send_recv}.csv -- use it if you specifically want predictions from "
+             "your own profiled hardware data rather than a topology simulator.",
+    )
     parser.add_argument("--network-device", default=None, help="e.g. mi355x_8gpu (required for --cc-backend vidur)")
     parser.add_argument("--request-mode", default="closed_loop", choices=["closed_loop", "poisson"],
                          help="closed_loop (default, matches real max-concurrency semantics) or poisson (legacy calibrated-QPS approximation)")
@@ -124,12 +143,47 @@ def main() -> None:
         if real_run.n_runs > 1
         else None
     )
+
+    # engine_label needs a sample BenchmarkResult alongside config: config.txt's bench_container
+    # is missing entirely for bare .log captures, and has been found actively wrong for some
+    # directory-based ones (see engine_label's docstring) -- the result block's own content is
+    # the more reliable signal, when available.
+    sample = real_run.benchmark[0] if real_run.benchmark else None
+    engine = engine_label(real_run.config, sample)
+
+    # Real-side request pattern: request_rate is parsed straight from the benchmark client's own
+    # args (inf for closed-loop/max-concurrency sweeps, a finite target rate for open-loop).
+    request_rate = sample.request_rate if sample is not None else None
+    if request_rate is None or math.isinf(request_rate):
+        loop_mode, request_rate_display = "closed-loop", "max-concurrency driven"
+    else:
+        loop_mode, request_rate_display = "open-loop", f"{request_rate:.3g} req/s"
+
+    identity = RunIdentity(
+        model_name=args.model_name,
+        device=args.device,
+        attn_tp=args.attn_tp,
+        attn_dp=args.attn_dp,
+        moe_tp=topology.moe_tensor_parallel_size,  # post_init-resolved, not the raw --moe-tp arg
+        moe_ep=args.moe_ep,
+        pipeline_stages=args.pipeline_stages,
+        num_replicas=args.num_replicas,
+        block_size=args.block_size,
+        cc_backend=args.cc_backend,
+        engine=engine,
+        input_len=sample.random_input_len if sample is not None else None,
+        output_len=sample.random_output_len if sample is not None else None,
+        loop_mode=loop_mode,
+        request_rate_display=request_rate_display,
+    )
+
     write_html_report(
         real_run.results,
         sim_results,
         Path(args.report),
-        title=f"{args.model_name} on {args.device}: real ({engine_label(real_run.config)}) vs simulated",
+        title=f"{args.model_name} on {args.device}: real ({engine}) vs simulated",
         subtitle=subtitle,
+        identity=identity,
     )
     print(f"Wrote {args.report}")
 
