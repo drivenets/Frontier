@@ -100,6 +100,16 @@ def main() -> None:
     parser.add_argument("--log-dir", default="outputs/mi355x_deepseek_r1_validation/logs")
     parser.add_argument("--report", default="comparison_report.html")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running them")
+    parser.add_argument(
+        "--extra-frontier-arg", action="append", default=[], metavar="ARG",
+        help="Extra raw frontier.main CLI argument, appended to every concurrency point's "
+             "invocation as-is -- repeatable. E.g. --extra-frontier-arg "
+             "--random_forrest_execution_time_predictor_config_attn_decode_calibration_scale "
+             "--extra-frontier-arg 1.75 (each flag/value is a separate --extra-frontier-arg, "
+             "since argparse can't tell a value apart from the next flag otherwise). Meant for "
+             "applying a tools/hpo/run_hpo.py study's winning calibration_scale params, or any "
+             "other one-off frontier.main flag not already covered by this CLI.",
+    )
     args = parser.parse_args()
 
     real_run = load_and_aggregate(args.run_dir)
@@ -123,6 +133,8 @@ def main() -> None:
         block_size=args.block_size, enable_chunked_prefill=args.enable_chunked_prefill,
         max_tokens_in_batch=args.max_tokens_in_batch, atten_input_file=args.atten_input_file,
     )
+    for sp in sim_points:
+        sp.args.extend(args.extra_frontier_arg)
 
     if args.dry_run:
         for sp in sim_points:

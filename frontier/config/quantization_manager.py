@@ -94,6 +94,15 @@ class QuantizationManager:
             self._operation_data_sources: Dict[str, str] = {}
             self._operation_approximation_factors: Dict[str, float] = {}
             self._operation_profiling_precision: Dict[str, PrecisionType] = {}
+            # Was a bare hardcoded `return 0.5` in _get_approximation_scale -- there's no ground
+            # truth to look up for "how much faster is FP8/INT8 than the BF16 data we actually
+            # profiled" (unlike e.g. batch-size/scheduler settings, which have one correct answer
+            # matching the real server's launch config): it depends on this hardware's actual
+            # tensor-core throughput and kernel quality for these specific ops/shapes, which
+            # hasn't been measured. Exactly the kind of unknown calibration_scale exists to
+            # absorb, so it's a settable field (default matches the old hardcoded behavior) and
+            # not a fixed CLI constant.
+            self._fp8_int8_approximation_scale = 0.5
             self._cluster_overrides: Dict[ClusterType, Dict[str, PrecisionType]] = {}
             self._supported_operations: Dict[str, Any] = {}
             self._warned_mismatches: Set[tuple] = set()
@@ -463,11 +472,22 @@ class QuantizationManager:
             )
         return metadata
 
+    def set_fp8_int8_approximation_scale(self, value: float) -> None:
+        """Override the FP8/INT8-vs-profiled-precision approximation scale (see __init__ for
+        why this is a calibration knob, not a fixed constant). Called once from Simulator.__init__
+        with SimulationConfig.fp8_int8_approximation_scale; kept as an explicit setter (rather than
+        folded into configure_from_model_config) since it's a run-wide calibration override, not
+        part of the per-model precision setup that method resets on every call."""
+        if value <= 0:
+            raise ValueError(f"fp8_int8_approximation_scale must be > 0, got {value}")
+        with self._lock:
+            self._fp8_int8_approximation_scale = value
+
     def _get_approximation_scale(
         self, target_precision: PrecisionType, profiling_precision: PrecisionType
     ) -> float:
         if target_precision in {PrecisionType.FP8, PrecisionType.INT8}:
-            return 0.5
+            return self._fp8_int8_approximation_scale
         return target_precision.get_compute_scaling_factor(profiling_precision)
 
     def has_explicit_precision(

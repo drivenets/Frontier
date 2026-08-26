@@ -77,6 +77,9 @@ class Simulator:
 
         self._quantization_manager = get_quantization_manager()
         self._quantization_manager.configure_from_model_config(model_config)
+        self._quantization_manager.set_fp8_int8_approximation_scale(
+            config.fp8_int8_approximation_scale
+        )
         self._quantization_manager.print_config_summary()
         global_vars.set_quantization_manager(self._quantization_manager)
 
