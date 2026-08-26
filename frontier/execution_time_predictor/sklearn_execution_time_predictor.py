@@ -3098,12 +3098,28 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                     f"\nMissing columns: {missing_columns}"
                     f"\nAll-NaN columns: {all_nan_columns}"
                 )
-            op_attention_df = attention_df.dropna(subset=[target_col]).copy()
+            # Every profiled row records a value in every MLA timing column regardless of
+            # which phase that row actually was -- a decode timer running during a prefill
+            # sample (or vice versa) measures the timer-overhead noise floor, not the target
+            # operation, and that noise was previously landing in the training data unfiltered
+            # (is_prefill was only ever a *feature*, never a pre-filter, unlike
+            # _train_attention_layer_models' dense-family sibling two methods down, which
+            # already splits into prefill_df/decode_df before training). Scope each model's
+            # rows to its own declared phase(s) first, same as that sibling does.
+            phase_kind = self._mla_operator_phase_kind(model_name)
+            if phase_kind == "decode":
+                phase_df = attention_df[attention_df["is_prefill"] == 0]
+            elif phase_kind == "prefill":
+                phase_df = attention_df[attention_df["is_prefill"] == 1]
+            else:
+                # cache_write operators run on every batch regardless of phase.
+                phase_df = attention_df
+            op_attention_df = phase_df.dropna(subset=[target_col]).copy()
             if op_attention_df.empty:
                 raise ValueError(
                     "MLA attention profiling data cannot train "
                     f"{model_name}: target column {target_col!r} has no "
-                    "observed timing rows."
+                    f"observed timing rows in its declared phase ({phase_kind})."
                 )
             nan_feature_columns = [
                 column
