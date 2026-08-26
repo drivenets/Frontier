@@ -432,6 +432,14 @@ def get_max_num_blocks(
     block_memory_total = block_memory_size * (
         model_config.num_layers // max_pipeline_parallel_size
     )
+    # NOTE: mem_get_info() returns (free, total) and this budgets against
+    # total, i.e. it assumes an idle GPU. On a box that is also serving (an
+    # sglang server holding 253 of 288 GB here) that over-budgets by the whole
+    # resident allocation. Left as-is deliberately: switching to free memory
+    # changes how many combinations survive the memory filter (12,521 -> 12,463
+    # points on the gpt-oss grid), which would silently make new profiling data
+    # non-comparable with everything already collected. Tested, and it does NOT
+    # fix the long-run GPU memory-access fault it was suspected of causing.
     return floor(
         (torch.cuda.mem_get_info()[1] * gpu_memory_utilization) / (block_memory_total)
     )
