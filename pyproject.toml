@@ -31,6 +31,9 @@ wandb = [
 profiling = [
   "pyyaml>=6.0",
 ]
+hpo = [
+  "optuna>=3.0,<4",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

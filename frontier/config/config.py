@@ -5933,6 +5933,19 @@ class SimulationConfig(ABC):
         },
     )
 
+    # Quantization approximation configuration
+    fp8_int8_approximation_scale: float = field(
+        default=0.5,
+        metadata={
+            "help": "Compute-time scale applied when an op's real precision is FP8/INT8 but "
+                    "only profiling data at a different precision (e.g. BF16) is available -- "
+                    "there's no ground truth to look up for this (unlike batch-size/scheduler "
+                    "settings, which should match the real server's actual launch config), so "
+                    "it's a calibration knob. Default 0.5 matches the value this was hardcoded "
+                    "to before it became configurable."
+        },
+    )
+
     # Performance profiling configuration
     enable_performance_profiling: bool = field(
         default=False,
