@@ -84,6 +84,7 @@ DENSE_ATTENTION_FAMILY = AttentionFamilySpec(
         "attention_backend",
         "n_q_head",
         "n_kv_head",
+        "head_dim",
         "block_size",
         "num_tensor_parallel_workers",
         "max_model_len",

@@ -27,6 +27,7 @@ DENSE_PROFILING_FEATURE_COLUMNS = (
     "attention_backend",
     "n_q_head",
     "n_kv_head",
+    "head_dim",
     "block_size",
     "num_tensor_parallel_workers",
     "max_model_len",

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from frontier.profiling.utils import record_function_tracer as tracer_module
 from frontier.profiling.common.timer_stats_store import TimerStatsStore
 from frontier.profiling.utils.record_function_tracer import RecordFunctionTracer
@@ -194,3 +196,58 @@ def test_record_function_tracer_ignores_non_vidur_cuda_priming_events(
 
     assert set(stats) == {"attn_kv_cache_save"}
     assert stats["attn_kv_cache_save"]["mean"] == 2.0
+
+
+def test_get_stats_keeps_every_run_in_order_and_aggregates_timed_runs_only() -> None:
+    _reset_timer_stats_singleton()
+    store = TimerStatsStore(profile_method="cuda")
+    runs = [9.0, 8.0, 7.0, 1.0, 2.0, 3.0, 4.0]  # 3 warm-ups, then 4 timed runs
+    for value in runs[:3]:
+        store.record_time("vidur_attn_decode", value)
+    store.mark_warmup_end()
+    for value in runs[3:]:
+        store.record_time("vidur_attn_decode", value)
+
+    stats = store.get_stats()["attn_decode"]
+
+    assert stats["count"] == 4
+    assert stats["warmup_count"] == 3
+    assert stats["min"] == 1.0
+    assert stats["max"] == 4.0
+    assert stats["median"] == 2.5
+    assert json.loads(stats["samples"]) == runs
+
+
+def test_get_stats_excludes_warmup_per_scope_when_a_scope_records_twice_per_forward() -> None:
+    # linear_op's GPTModel.forward calls embed_tokens twice per forward, so the
+    # emb scope gets 2 records per run: 3 warm-up forwards -> 6 warm-up records.
+    _reset_timer_stats_singleton()
+    store = TimerStatsStore(profile_method="cuda")
+    for _ in range(3):
+        store.record_time("vidur_emb", 50.0)
+        store.record_time("vidur_emb", 50.0)
+        store.record_time("vidur_attn_pre_proj", 50.0)
+    store.mark_warmup_end()
+    for value in (1.0, 2.0):
+        store.record_time("vidur_emb", value)
+        store.record_time("vidur_emb", value)
+        store.record_time("vidur_attn_pre_proj", value)
+
+    stats = store.get_stats()
+
+    assert stats["emb"]["count"] == 4
+    assert stats["emb"]["max"] == 2.0
+    assert stats["emb"]["warmup_count"] == 6
+    assert stats["attn_pre_proj"]["count"] == 2
+    assert stats["attn_pre_proj"]["warmup_count"] == 3
+    assert len(json.loads(stats["emb"]["samples"])) == 10
+
+
+def test_get_stats_rejects_scope_with_no_timed_runs() -> None:
+    _reset_timer_stats_singleton()
+    store = TimerStatsStore(profile_method="cuda")
+    store.record_time("vidur_attn_decode", 1.0)
+    store.mark_warmup_end()
+
+    with pytest.raises(ValueError, match="all of them warm-up"):
+        store.get_stats()

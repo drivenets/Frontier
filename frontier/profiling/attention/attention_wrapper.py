@@ -28,7 +28,7 @@ from frontier.profiling.utils import ProfileMethod, normalize_profile_method
 from frontier.profiling.utils.record_function_tracer import RecordFunctionTracer
 
 WARMUP_STEPS = 3
-ACTIVE_STEPS = 5
+ACTIVE_STEPS = 50
 _ALLOW_ZERO_CUDA_OPS = {"attn_input_reshape", "attn_output_reshape"}
 
 
@@ -352,13 +352,14 @@ class AttentionWrapper:
 
             time_stats = record_function_tracer.get_operation_time_stats()
         else:
+            self.time_stats_store.clear_stats()
+
             for _ in range(WARMUP_STEPS):
                 get_attention_wrapper().forward(
                     query, key, value, kv_cache, softmax_scale=self._softmax_scale
                 )
             torch.cuda.synchronize()
-
-            self.time_stats_store.clear_stats()
+            self.time_stats_store.mark_warmup_end()
 
             for _ in range(ACTIVE_STEPS):
                 get_attention_wrapper().forward(
@@ -390,9 +391,12 @@ class AttentionWrapper:
             "n_embd": self._model_config.embedding_dim,
             "n_q_head": self._model_config.num_q_heads,
             "n_kv_head": self._model_config.num_kv_heads,
+            "head_dim": int(self._model_config.get_head_size()),
             "block_size": self._block_size,
             "num_tensor_parallel_workers": self._parallel_config.tensor_parallel_size,
             "max_model_len": self._max_model_len,
+            "warmup_steps": WARMUP_STEPS,
+            "active_steps": ACTIVE_STEPS,
             "batch_size": attention_input.batch_size,
             "prefill_chunk_size": attention_input.prefill_chunk_size,
             "kv_cache_size": attention_input.kv_cache_size,
@@ -465,15 +469,15 @@ class AttentionWrapper:
 
             time_stats = record_function_tracer.get_operation_time_stats()
         else:
+            self.time_stats_store.clear_stats()
+
             # Warmup iterations
             for _ in range(WARMUP_STEPS):
                 get_attention_wrapper().forward(
                     query, key, value, kv_cache, softmax_scale=self._softmax_scale
                 )
             torch.cuda.synchronize()
-
-            # Clear statistics before active profiling
-            self.time_stats_store.clear_stats()
+            self.time_stats_store.mark_warmup_end()
 
             # Active profiling iterations
             for _ in range(ACTIVE_STEPS):
@@ -494,9 +498,12 @@ class AttentionWrapper:
             "n_embd": self._model_config.embedding_dim,
             "n_q_head": self._model_config.num_q_heads,
             "n_kv_head": self._model_config.num_kv_heads,
+            "head_dim": int(self._model_config.get_head_size()),
             "block_size": self._block_size,
             "num_tensor_parallel_workers": self._parallel_config.tensor_parallel_size,
             "max_model_len": self._max_model_len,
+            "warmup_steps": WARMUP_STEPS,
+            "active_steps": ACTIVE_STEPS,
             "attention_backend": self._attention_backend,
             # Standard fields (for compatibility)
             "is_prefill": True,
@@ -542,13 +549,14 @@ class AttentionWrapper:
 
             time_stats = record_function_tracer.get_operation_time_stats()
         else:
+            self.time_stats_store.clear_stats()
+
             for _ in range(WARMUP_STEPS):
                 get_attention_wrapper().forward(
                     query, key, value, kv_cache, softmax_scale=self._softmax_scale
                 )
             torch.cuda.synchronize()
-
-            self.time_stats_store.clear_stats()
+            self.time_stats_store.mark_warmup_end()
 
             for _ in range(ACTIVE_STEPS):
                 get_attention_wrapper().forward(
@@ -565,9 +573,12 @@ class AttentionWrapper:
             "n_embd": self._model_config.embedding_dim,
             "n_q_head": self._model_config.num_q_heads,
             "n_kv_head": self._model_config.num_kv_heads,
+            "head_dim": int(self._model_config.get_head_size()),
             "block_size": self._block_size,
             "num_tensor_parallel_workers": self._parallel_config.tensor_parallel_size,
             "max_model_len": self._max_model_len,
+            "warmup_steps": WARMUP_STEPS,
+            "active_steps": ACTIVE_STEPS,
             "attention_backend": self._attention_backend,
         }
         result.update(true_mixed_input.to_dict())

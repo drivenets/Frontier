@@ -21,7 +21,7 @@ from frontier.profiling.utils import (
 from frontier.profiling.utils.record_function_tracer import RecordFunctionTracer
 
 WARMUP_STEPS = 3
-ACTIVE_STEPS = 20
+ACTIVE_STEPS = 50
 
 
 class LinearOpWrapper:
@@ -158,6 +158,8 @@ class LinearOpWrapper:
             if missing_keys:
                 print(f"[WARNING] num_tokens={num_tokens}: Missing operations: {missing_keys}")
         else:
+            self.timer_stats_store.clear_stats()
+
             for _ in range(WARMUP_STEPS):
                 self.model(
                     input_ids,
@@ -165,8 +167,7 @@ class LinearOpWrapper:
                 )
 
             torch.cuda.synchronize()
-
-            self.timer_stats_store.clear_stats()
+            self.timer_stats_store.mark_warmup_end()
 
             for _ in range(ACTIVE_STEPS):
                 self.model(
@@ -190,6 +191,8 @@ class LinearOpWrapper:
             "use_qk_norm": getattr(self.model_config, "use_qk_norm", False),
             "attn_output_gate": getattr(self.model_config, "attn_output_gate", False),
             "num_tokens": num_tokens,
+            "warmup_steps": WARMUP_STEPS,
+            "active_steps": ACTIVE_STEPS,
             "num_tensor_parallel_workers": self.num_tensor_parallel_workers,
             "padded_n_embd": (
                 self.profiling_plan.get("padded_n_embd", self.model_config.embedding_dim)

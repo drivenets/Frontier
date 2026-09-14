@@ -220,3 +220,19 @@ def test_prepare_standard_attention_output_rejects_missing_dense_schema_columns(
             quant_signature="none",
             measurement_type="CUDA_EVENT",
         )
+
+
+def test_prepare_standard_attention_output_rejects_row_without_head_dim() -> None:
+    row = _dense_standard_row("CUDA_EVENT")
+    del row["head_dim"]
+    df = pd.DataFrame([row])
+
+    with pytest.raises(ValueError, match="head_dim"):
+        attention_main._prepare_standard_attention_output_dataframe(  # pylint: disable=protected-access
+            df,
+            precision_str="bf16",
+            model_arch="llama",
+            model_architecture_profile="generic",
+            quant_signature="none",
+            measurement_type="CUDA_EVENT",
+        )
