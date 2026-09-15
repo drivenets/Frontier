@@ -98,6 +98,12 @@ NUM_GPUS="${NUM_GPUS:-8}"
 # on all 8 GPUs. 4 costs ~2x wall time on a run that takes minutes, so it is
 # cheap insurance. Retest with 8 once the GPUs are actually free.
 AITER_NUM_GPUS="${AITER_NUM_GPUS:-4}"
+# Attention dims used only to force the aiter JIT compiles in prewarm_aiter():
+# total q heads, total kv heads, head_dim. Defaults are gpt-oss (20b and 120b
+# are identical); set all three for any other model, e.g. Qwen3-30B-A3B = 32 4 128.
+PREWARM_NQ="${PREWARM_NQ:-64}"
+PREWARM_NKV="${PREWARM_NKV:-8}"
+PREWARM_HD="${PREWARM_HD:-64}"
 GPU_IDS="${GPU_IDS:-$(seq -s, 0 $((NUM_GPUS - 1)))}"
 PROFILE_METHOD="${PROFILE_METHOD:-cuda_event}"
 PRECISION="${PRECISION:-BF16}"
@@ -133,6 +139,12 @@ TRUE_MIXED_PREFILL_KV_CACHE_SIZE="${TRUE_MIXED_PREFILL_KV_CACHE_SIZE:-0}"
 # (attention.csv keys only on device/model/profile_method -- not block_size, not
 # TP, not backend) simply cannot fire. Collection into the canonical taxonomy is
 # an explicit, separate step.
+# Only dirs the caller set explicitly are forwarded into the container (as given,
+# so pass repo-relative paths); unset ones take the in-container defaults below.
+DOCKER_PATH_ENV=()
+for _v in WORK_DIR COLLECT_DIR LOG_DIR; do
+  [ -n "${!_v:-}" ] && DOCKER_PATH_ENV+=(-e "$_v=${!_v}")
+done
 WORK_DIR="${WORK_DIR:-$REPO_ROOT/data/profiling/sweep_work}"
 COLLECT_DIR="${COLLECT_DIR:-$REPO_ROOT/data/profiling}"
 LOG_DIR="${LOG_DIR:-$WORK_DIR/logs}"
@@ -241,6 +253,8 @@ EOF
     -e PROFILE_METHOD="$PROFILE_METHOD" -e PRECISION="$PRECISION" \
     -e NUM_GPUS="$NUM_GPUS" -e DEVICE="$DEVICE" \
     -e AITER_CACHE_DIR=/root/.aiter \
+    -e PREWARM_NQ="$PREWARM_NQ" -e PREWARM_NKV="$PREWARM_NKV" -e PREWARM_HD="$PREWARM_HD" \
+    ${DOCKER_PATH_ENV[@]+"${DOCKER_PATH_ENV[@]}"} \
     "$DOCKER_IMAGE" \
     bash -lc "profiling_knowledge/scripts/$(basename "$0") ${args[*]}"
 }
@@ -260,12 +274,13 @@ prewarm_aiter() {
   # Stale locks from an interrupted compile make the next run block on a baton
   # that is never released.
   find "${AITER_CACHE_DIR:-$HOME/.aiter}/build" -name lock -type f -delete 2>/dev/null || true
-  AITER_TPS="$AITER_TPS" BLOCK_SIZES="$AITER_BLOCK_SIZES" "$PYTHON_BIN" - <<'PYEOF'
+  AITER_TPS="$AITER_TPS" BLOCK_SIZES="$AITER_BLOCK_SIZES" \
+  PREWARM_NQ="$PREWARM_NQ" PREWARM_NKV="$PREWARM_NKV" PREWARM_HD="$PREWARM_HD" "$PYTHON_BIN" - <<'PYEOF'
 import math, os, sys, torch
 from aiter.ops.attention import paged_attention_ragged
 
 DEV, DT, PART = "cuda:0", torch.bfloat16, 256
-NQ_TOTAL, NKV_TOTAL, HD = 64, 8, 64   # gpt-oss attention dims (20b and 120b are identical)
+NQ_TOTAL, NKV_TOTAL, HD = (int(os.environ[k]) for k in ("PREWARM_NQ", "PREWARM_NKV", "PREWARM_HD"))
 for tp in os.environ["AITER_TPS"].split():
     for bs in os.environ["BLOCK_SIZES"].split():
         tp, bs = int(tp), int(bs)
