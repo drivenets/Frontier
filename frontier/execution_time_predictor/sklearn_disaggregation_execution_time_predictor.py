@@ -1509,6 +1509,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                         num_devices=moe_tp_size,
                         cluster_type=cluster_type,
                         comm_domain="MOE_TP",
+                        replica_id=batch.replica_id,
                     )
                     if moe_time.share_expert_time > 0:
                         allreduce_bytes = quant_manager.adjust_tensor_size(
@@ -1519,6 +1520,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                             num_devices=moe_tp_size,
                             cluster_type=cluster_type,
                             comm_domain="MOE_TP",
+                            replica_id=batch.replica_id,
                         )
                         share_expert_tp_allreduce_time = self._apply_share_expert_tp_allreduce_overlap(
                             raw_share_expert_tp_allreduce_time
@@ -1860,6 +1862,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                         num_devices=moe_tp_size,
                         cluster_type=cluster_type,
                         comm_domain="MOE_TP",
+                        replica_id=batch.replica_id,
                     )
 
                 return ExecutionTime(
@@ -2276,6 +2279,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                         num_devices=moe_tp_size,
                         cluster_type=cluster_type,
                         comm_domain="MOE_TP",
+                        replica_id=batch.replica_id,
                     )
 
                     architecture_profile = self._resolve_model_architecture_profile_for_config(
@@ -2290,6 +2294,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                             num_devices=moe_tp_size,
                             cluster_type=cluster_type,
                             comm_domain="MOE_TP",
+                            replica_id=batch.replica_id,
                         )
                         if (
                             moe_time.share_expert_up_proj_time
@@ -2302,6 +2307,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                                 num_devices=moe_tp_size,
                                 cluster_type=cluster_type,
                                 comm_domain="MOE_TP",
+                                replica_id=batch.replica_id,
                             )
                             share_expert_tp_allreduce_time = self._apply_share_expert_tp_allreduce_overlap(
                                 raw_share_expert_tp_allreduce_time

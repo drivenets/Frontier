@@ -631,6 +631,7 @@ class AstraSimAnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_data_size(data_size_bytes)
         self._validate_num_devices(num_devices, "allreduce")
@@ -649,6 +650,7 @@ class AstraSimAnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_data_size(data_size_bytes)
         self._validate_num_devices(num_devices, "allgather")
@@ -667,6 +669,7 @@ class AstraSimAnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_data_size(data_size_bytes)
         self._validate_num_devices(num_devices, "broadcast")
@@ -713,6 +716,7 @@ class AstraSimAnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_data_size(data_size_bytes)
         self._validate_num_devices(num_devices, "reduce_scatter")
@@ -731,6 +735,7 @@ class AstraSimAnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_data_size(data_size_bytes)
         self._validate_num_devices(num_devices, "all_to_all")

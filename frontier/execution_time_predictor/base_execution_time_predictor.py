@@ -272,6 +272,7 @@ class BaseExecutionTimePredictor(ABC):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict tensor parallel all-reduce communication time.
@@ -299,6 +300,7 @@ class BaseExecutionTimePredictor(ABC):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict expert parallel all-gather communication time.
@@ -326,6 +328,7 @@ class BaseExecutionTimePredictor(ABC):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict expert parallel all-to-all communication time.
