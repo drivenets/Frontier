@@ -1,0 +1,178 @@
+- repair_iteration: 1
+  plan_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/01_plan.md
+  stage_5_checks: all_pass
+  stage_5_failed_checks: [none]
+  stage_6a_internal_overall: PASS
+  stage_6a_blocking_count: 0
+  stage_6a_nonblocking_count: 0
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_error_reason: n/a
+  stage_6b_codex_command: codex exec -c 'model="gpt-5.5"' --sandbox read-only --output-last-message review/plan_codex_verdict_iter1.md - < codex_plan_prompt_iter1.txt
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_iter1.md
+  converged: false
+  findings_verified_against_source:
+    - "add scope not emitted for Qwen3 (uses_fused_add_norm, linear_op_impl.py:765-767; no time_stats.add in existing MI355X linear_op.csv) -> removed from selection"
+    - "predictor load validates MLA family only (sklearn 1233-1238, shared manager 1682-1686) -> REQ-6/D-5 reworded; premise change surfaced to user"
+    - "main.py prints no per-TP standard post-filter count -> validator recomputes grid offline from recorded gpu_total_bytes"
+    - "get_num_tokens_to_profile returns descending -> helper/tests aligned"
+    - "aiter cache dir probed on one node only -> sbatch mkdir -p"
+- repair_iteration: 2
+  plan_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/01_plan.md
+  stage_5_checks: all_pass
+  stage_5_failed_checks: [none]
+  stage_6a_internal_overall: PASS
+  stage_6a_blocking_count: 0
+  stage_6a_nonblocking_count: 0
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_error_reason: n/a
+  stage_6b_codex_command: codex exec -c 'model="gpt-5.5"' --sandbox read-only --output-last-message review/plan_codex_verdict_iter2.md - < codex_plan_prompt_iter2.txt
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_iter2.md
+  converged: false
+  findings_verified_against_source:
+    - "standard grid has 275 duplicate keys per TP by design (2772 attempts / 2497 unique); gpt-oss cell 11081 rows / 9981 unique -> rows kept, validator predicts multiplicity, spread thresholds warn 0.10 / fail 0.30"
+    - "attn_pre_proj/attn_rope/attn_post_proj are ATTENTION_LINEAR_OPS, not manifest members -> expectation split into two sets"
+    - "replicated ops NaN at TP>1 (split_replicated_result, linear_op/main.py:581-586; existing CSV 258 NaN per TP>1) -> per-operator NaN scoping"
+    - "true-mixed batch_size == total_batch_size (true_mixed_batch_input.py:104-123) -> list check scoped to standard rows"
+- repair_iteration: 3
+  plan_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/01_plan.md
+  stage_5_checks: all_pass
+  stage_5_failed_checks: [none]
+  stage_6a_internal_overall: PASS
+  stage_6a_blocking_count: 0
+  stage_6a_nonblocking_count: 0
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_error_reason: n/a
+  stage_6b_codex_command: codex exec -c 'model="gpt-5.5"' --sandbox read-only --output-last-message review/plan_codex_verdict_iter3.md - < codex_plan_prompt_iter3.txt
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_iter3.md
+  converged: false
+  findings_verified_against_source:
+    - "multiplicity distribution computed: {2: 269, 1: 2225, 3: 3} -> plan/test/success-criteria corrected; only unexpected duplicates reject"
+    - "prewarm dedupe on gqa_ratio had no source authority -> warm all 8 (TP, block) pairs with model-derived shard shapes (template behaviour)"
+    - "bash -n takes one script -> loop"
+- repair_iteration: 4
+  plan_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/01_plan.md
+  stage_5_checks: all_pass
+  stage_5_failed_checks: [none]
+  stage_6a_internal_overall: PASS
+  stage_6a_blocking_count: 0
+  stage_6a_nonblocking_count: 0
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_error_reason: n/a
+  stage_6b_codex_command: codex exec -c 'model="gpt-5.5"' --sandbox read-only --output-last-message review/plan_codex_verdict_iter4.md - < codex_plan_prompt_iter4.txt
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_iter4.md
+  converged: false
+  findings_verified_against_source:
+    - "AC-2 still said 4 templates -> 8 specs"
+    - "sweep LOG_DIR defaults to $WORK_DIR/logs (script line 'LOG_DIR=${LOG_DIR:-$WORK_DIR/logs}') -> driver passes LOG_DIR explicitly; smoke.log / linear_op.log / per-cell logs named; ingest rsyncs logs"
+    - "bash -n loop could exit 0 -> accumulate failed and exit nonzero"
+    - "expected_attention_grid pins gpu_memory_utilization=0.9 and max_pipeline_parallel_size=1 via the expectation"
+- repair_iteration: 5
+  plan_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/01_plan.md
+  stage_5_checks: all_pass
+  stage_5_failed_checks: [none]
+  stage_6a_internal_overall: PASS
+  stage_6a_blocking_count: 0
+  stage_6a_nonblocking_count: 0
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_error_reason: n/a
+  stage_6b_codex_command: codex exec -c 'model="gpt-5.5"' --sandbox read-only --output-last-message review/plan_codex_verdict_iter5.md - < codex_plan_prompt_iter5.txt
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_iter5.md
+  converged: false
+  findings_verified_against_source:
+    - "run_in_docker mounts only $REPO_ROOT and $AITER_CACHE_DIR and forwards no WORK_DIR/COLLECT_DIR/LOG_DIR (profile_gptoss_attention_full_sweep.sh run_in_docker) -> SHARED_ROOT mount + env forwarding added to plan; smoke gets its own work namespace"
+  note: MAX_REPAIR_ITERATIONS reached; fix applied to the plan text but NOT re-reviewed by Codex; divergence report written
+- repair_iteration: slim-1
+  plan_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/01_plan.md  (rewritten slim, 2026-09-14; v1 at review/01_plan_v1_superseded.md)
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_slim1.md
+  converged: false
+  findings_verified_against_source:
+    - "Step 4 ordering: rsync would overwrite legacy linear_op.csv before git mv -> renames moved before rsync"
+    - "linear_op docker wrapper spelled out (non-blocking)"
+- repair_iteration: slim-2
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_slim2.md
+  converged: false
+  findings_verified_against_source:
+    - "00 record still said 'port code files, not data' -> corrected to the user's 'Rebase onto feat branch' decision"
+    - "Slurm -o dir must pre-exist -> mkdir -p in the submit command"
+    - "sanity script: kv_cache_save median, symlink check, duplicate policy stated"
+    - "PREWARM_* defaults defined before run_in_docker (set -u)"
+- repair_iteration: slim-3
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_slim3.md
+  converged: false
+  findings_verified_against_source:
+    - "linear_op --max_tokens defaults to 4096 and get_num_tokens_to_profile rejects larger list values -> --max_tokens 16384 added"
+    - "training input named: attention_combined.csv + linear_op.csv"
+    - "sanity_check.py location aligned"
+- repair_iteration: slim-4
+  stage_6b_codex_overall: FAIL
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_slim4.md
+  converged: false
+  findings_verified_against_source:
+    - "grid coverage: asserted via the existing generator functions (subset + prefill-complete + missing only at TP1/2); deliberately NO max_num_blocks recompute (user cut list)"
+    - "-e NAME=\"$NAME\" form specified; predictor true-mixed split line cited"
+- repair_iteration: slim-5
+  stage_6b_codex_overall: PASS
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_slim5.md
+  converged: true
+  non_blocking_applied:
+    - "cite both dense schema tuples in test_attention_family_specs.py (765-777, 820-832)"
+    - "ponytail marker reworded as prose"
+- repair_iteration: slim-6 (new requirement)
+  change: "Step 1b added per user: ACTIVE_STEPS=50 both profilers; all 53 runs (3 warm-up + 50) recorded in order as time_stats.<op>.samples; warmup_steps/active_steps columns; aggregates unchanged in meaning"
+  stage_6b_codex_overall: FAIL (slim6: clear_stats must move before warm-up, not be dropped) -> fixed, rerun as slim7
+- repair_iteration: slim-7
+  stage_6b_codex_overall: PASS
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_slim7.md
+  converged: true
+  non_blocking: ["samples column also reaches moe/collectives CSVs (noted in plan)", "scripts/slurm/ dir created by adding the sbatch file"]
+- repair_iteration: slim-8 (new requirements)
+  change: "Step 3 split: pilot (TP1, 2048 ctx, block16, own work tree; 380+60 attempts) -> linear_op job first -> attention block16 job -> attention block1 job; -t sized from pilot seconds/attempt; TP=8 with 4 KV heads verified (tp policy, linear_op_impl:33-52, a800 TP=8 rows)"
+  stage_6b_codex_overall: FAIL (slim8: WORK_DIR/COLLECT_DIR/LOG_DIR must be forwarded for pilot isolation; AITER_TPS + per-job trees for the split fallback) -> fixed, rerun as slim9
+- repair_iteration: slim-9
+  stage_6b_codex_overall: PASS
+  stage_6b_codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/plan_codex_verdict_slim9.md
+  converged: true
+  non_blocking_applied: ["repo-relative path forwarding clarified", "slurm/ dir noted", "linear_op rename wording"]
+- implement_iteration: 1
+  task: Steps 1 + 1b
+  stage_b_overall: FAIL
+  stage_b_blocking: ["correctness B1: flat warmup slice leaks warm-up records into linear_op emb (embed_tokens called twice per forward)"]
+  repair_plan: "Stage R: TimerStatsStore.mark_warmup_end() snapshots per-scope record counts after the warm-up sync; get_stats() slices per scope; adds warmup_count per scope; regression test with a scope recorded twice per forward. Allowed files: timer_stats_store.py, attention_wrapper.py, linear_op_wrapper.py, test_profiling_timing_stats_contract.py, 01_plan.md. Non-blocking applied: compact rounded samples, del row['head_dim'], json_normalize assertion, guard test, uv.lock/.claude duplicate removed."
+- implement_iteration: 2 (repair of iteration 1)
+  task: Steps 1 + 1b
+  developer_summary: "per-scope warm-up snapshot (mark_warmup_end) replaces flat warmup_steps slice; head_dim required + recorded; ACTIVE_STEPS=50; samples/warmup_count columns"
+  files_changed: [frontier/attention/families.py, frontier/profiling/common/timer_stats_store.py, frontier/profiling/attention/attention_wrapper.py, frontier/profiling/linear_op/linear_op_wrapper.py, tests/unit/test_attention_family_specs.py, tests/unit/test_attention_family_spec_data.py, tests/unit/test_attention_main_true_mixed_contract.py, tests/unit/test_profiling_timing_stats_contract.py]
+  red_evidence: present (6 targeted failures before implementation)
+  green_evidence: present (93 targeted passed; full unit suite 88 failed/2133 passed vs base 88 failed/2129 passed, identical failure set)
+  test_coverage: present
+  coverage_decision: measured_pass for families.py (95%) and timer_stats_store.py (92%); wrappers unavailable_review_required (CUDA-only construction; covered by the on-cluster pilot + sanity script)
+  suite_result: pass (no introduced failures)
+  stage_b_overall: PASS (correctness, security, performance, standards, slop)
+  stage_b_blocking_count: 0
+  stage_b_nonblocking_count: 9 (applied: compact rounded samples, del head_dim, guard test, twice-per-forward regression, __init__->clear_stats, split asserts, drop tautological normalize assert, hygiene: uv.lock/.claude removed; recorded: record_function repeat count, KERNEL_ONLY row labels, moe/collectives warmup_count=0)
+  codex_overall: PASS
+  codex_command: codex exec -c 'model="gpt-5.5"' --sandbox read-only --output-last-message review/impl_codex_verdict_iter1.md - < codex_impl_prompt_iter1.txt
+  codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/impl_codex_verdict_iter1.md
+  fix_source: none
+  converged: true
+- implement_iteration: 1 (Steps 2-4)
+  developer_summary: "sweep script: env-driven PREWARM_* dims + conditional WORK_DIR/COLLECT_DIR/LOG_DIR forwarding (gpt-oss dry-run byte-identical); sbatch with STAGE=pilot|linear_op|attention; sanity_check.py + generator-built contract tests"
+  files_changed: [profiling_knowledge/scripts/profile_gptoss_attention_full_sweep.sh, profiling_knowledge/scripts/slurm/qwen3_mi355x_profiling.sbatch, profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/sanity_check.py, tests/unit/test_qwen3_mi355x_sanity_check.py]
+  red_evidence: present (sanity tests failed: script absent)
+  green_evidence: present (bash -n both scripts; dry-run identical to pre-edit baseline; full unit suite 88 failed/2135 passed vs base 88/2129, identical failure set)
+  stage_b_overall: FAIL (slop: escape-hatch flag + shallow negative tests; standards: test file not in plan Files table)
+  repair_plan: "drop --expect-full-grid; tests build the dataset from the real generators; exact FAIL-line negative tests per check class; add plan-listed Step 4 checks (true-mixed coverage, max/median ratio, monotonic in batch, block1/16 cross-check, true-mixed vs even overhead); promote repeated-shape spread + emb-on-TP1 to asserted; sbatch DOCKER_GPU_FLAGS dedup; FRONTIER_COMMIT via --export; plan Files table amended to list the test file"
+- implement_iteration: 2 (Steps 2-4 repair)
+  developer_summary: "sanity_check.py: no escape hatch, uniform REQ columns, true-mixed columns required + coverage asserted, repeated-shape spread + emb-on-TP1 asserted, extra plan notes (max/median ratio, monotonic in batch, block1/16 cross-check, true-mixed vs even); tests: module-scoped generator-built dataset, 11 exact-message negatives + 2 linear_op negatives (14 tests); sbatch: per-WORK_DIR logs, exit 1 on missing cell CSV, HSA_ENABLE_COREDUMP=0, DOCKER_GPU_FLAGS; plan Files table lists the test"
+  stage_b_status: "correctness PASS (re-review), standards PASS (re-review; sbatch --test-only 4/4 accepted on cluster), security PASS, performance PASS (sanity <3 s on real-size data), slop re-review pending"
+- implement_iteration: 3 (Steps 2-4, Codex repairs)
+  developer_summary: "sanity_check.py: explicit block x TP grid loops; row-hash multiset equality (float_precision=round_trip, profiler marker normalisation) for canonical/combined; bounded memory-filter exemption (smallest shapes must exist); n_embd in linear_op dims; plan Step 4 union snippet reads with round_trip. Tests: 32 (generator-built dataset mimicking the profiler schema: no is_true_mixed_batch in standard files, full-precision medians; exact FAIL-line negatives incl. symlink, stale same-length canonical/combined, whole-cell missing, smallest-shape missing)"
+  green_evidence: present (32 sanity tests; full unit suite 88 failed/2165 passed vs base 88/2129, identical failure set)
+  stage_b_overall: PASS (correctness re-check found and fixed two real false-FAIL paths verified on real gpt-oss CSVs; slop mutation matrix kills all grid asserts; standards sbatch --test-only 4/4; security; performance)
+  codex_overall: PASS (iteration 4)
+  codex_command: codex exec -c 'model="gpt-5.5"' --sandbox read-only --output-last-message review/impl_codex_verdict_s24_iter4.md - < codex_impl_prompt_s24_iter4.txt
+  codex_verdict_path: profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/review/impl_codex_verdict_s24_iter4.md
+  converged: true

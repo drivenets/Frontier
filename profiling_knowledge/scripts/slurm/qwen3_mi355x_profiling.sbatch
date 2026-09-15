@@ -18,22 +18,34 @@ set -euo pipefail
 
 STAGE="${STAGE:?set STAGE=pilot|linear_op|attention}"
 FRONTIER_ROOT="${FRONTIER_ROOT:-/opt/shared/frontier-qwen3-profiling/Frontier}"
-IMAGE="${IMAGE:-lmsysorg/sglang:v0.5.11-rocm700-mi35x}"
+# v0.5.11-rocm700's aiter (Apr 2026) faults in mha_batch_prefill for head_dim 128 with paged KV (pilot jobs 21300/21303, repro 21302/21304);
+# v0.5.17-rocm720 runs the same grid clean at block 1 and 16.
+IMAGE="${IMAGE:-lmsysorg/sglang:v0.5.17-rocm720-mi35x}"
+# linear_op needs vllm, which v0.5.17 no longer ships; v0.5.11 has it and linear_op never touches the faulty prefill kernel.
+LINEAR_IMAGE="${LINEAR_IMAGE:-lmsysorg/sglang:v0.5.11-rocm700-mi35x}"
 MODEL="${MODEL:-qwen3-a3b-30b-moe}"
 GPU_IDS="0,1,2,3,4,5,6,7"
+# aiter JIT cache is per node; /mnt/data/aiter-cache exists on some nodes only, and dn cannot create it (job 21283)
+AITER_CACHE_DIR=/mnt/data/aiter-cache
+[ -d "$AITER_CACHE_DIR" ] && [ -w "$AITER_CACHE_DIR" ] || AITER_CACHE_DIR="/tmp/aiter-cache-$(id -un)"
 DOCKER_GPU_FLAGS=(--device=/dev/kfd --device=/dev/dri --group-add video --group-add 110 --ipc=host
   --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 8G)
 
 cd "$FRONTIER_ROOT"
-mkdir -p /mnt/data/aiter-cache data/profiling/sweep_work/logs
+# /opt/shared is NFS with root_squash: the container runs as root, which the server maps to nobody, so every
+# directory the profiler writes into must exist and be world-writable before docker starts (pilot job 21280 died on mkdir).
+mkdir -p "$AITER_CACHE_DIR" data/profiling/sweep_work/logs data/profiling/sweep_work_pilot data/profiling_pilot \
+  "${WORK_DIR:-data/profiling/sweep_work}" "${COLLECT_DIR:-data/profiling}/compute/mi355x/$MODEL"
+chmod -R a+rwX data/profiling data/profiling_pilot 2>/dev/null || true   # dirs a previous container created belong to nobody; leave them
+[ "$STAGE" = linear_op ] && IMAGE="$LINEAR_IMAGE"
 docker image inspect "$IMAGE" >/dev/null || { echo "image $IMAGE not on $(hostname)" >&2; exit 1; }
-echo "host=$(hostname) job=${SLURM_JOB_ID:-local} stage=$STAGE commit=${FRONTIER_COMMIT:-unknown (pass --export=ALL,FRONTIER_COMMIT=<sha>)} image=$IMAGE"
+echo "host=$(hostname) job=${SLURM_JOB_ID:-local} stage=$STAGE aiter_cache=$AITER_CACHE_DIR commit=${FRONTIER_COMMIT:-unknown (pass --export=ALL,FRONTIER_COMMIT=<sha>)} image=$IMAGE"
 rocm-smi --showmemuse 2>/dev/null | grep -i "used" || true
 
 run_attention() {
   MODELS="$MODEL" BACKENDS=AITER AITER_NUM_GPUS="${AITER_NUM_GPUS:-4}" \
   PREWARM_NQ=32 PREWARM_NKV=4 PREWARM_HD=128 \
-  DOCKER_IMAGE="$IMAGE" AITER_CACHE_DIR=/mnt/data/aiter-cache GPU_IDS="$GPU_IDS" \
+  DOCKER_IMAGE="$IMAGE" AITER_CACHE_DIR="$AITER_CACHE_DIR" GPU_IDS="$GPU_IDS" \
   "$@" bash profiling_knowledge/scripts/profile_gptoss_attention_full_sweep.sh --docker
 }
 
@@ -44,6 +56,8 @@ case "$STAGE" in
       TRUE_MIXED_DECODE_KV_CACHE_SIZES="128 512 1024 2048" \
       WORK_DIR=data/profiling/sweep_work_pilot COLLECT_DIR=data/profiling_pilot
     # per-cell logs land in $WORK_DIR/logs (sweep default), so no job can truncate another's
+    test -s "data/profiling_pilot/compute/mi355x/$MODEL/attention_combined_aiter_block16.csv" \
+      || { echo "pilot produced no collected CSV" >&2; exit 1; }
     ;;
   attention)
     run_attention env AITER_TPS="${AITER_TPS:-1 2 4 8}" MAX_SEQ_LEN=16384 MAX_MODEL_LEN=16384 \
