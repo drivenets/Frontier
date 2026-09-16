@@ -45,6 +45,10 @@ from frontier.config import (
     get_quantization_manager,
 )
 from frontier.entities import Batch, Request
+from frontier.execution_time_predictor.replica_id_encoding import (
+    ATTN_DP_ENCODING_BASE,
+    encode_group_replica_id,
+)
 from frontier.entities.time_components import (
     AttentionTime,
     AttentionOperatorTimes,
@@ -158,21 +162,20 @@ def _get_operator_spec_by_name(family, op_name: str) -> OperatorSpec:
     return matches[0]
 
 
-# Track B Step 41: encodes (batch.replica_id, batch.decode_attn_original_dp_id)
-# into the single `replica_id` int the disambiguation interface carries, for
-# ATTN_TP calls specifically. `batch.replica_id` is global across every
-# cluster/pool in the whole simulated deployment (`BaseEntity.generate_id()`'s
-# own shared per-subclass counter -- confirmed by reading
-# `frontier/entities/base_entity.py` and `base_replica_scheduler.py`'s
-# `self._replica_id = replica.id`); `batch.decode_attn_original_dp_id` is
-# local to one replica's own DP lanes (`for dp_id in range(self._replica_dp_size)`
-# in `base_cluster_scheduler.py`). Neither alone disambiguates every case this
-# encoding needs to: two DP lanes of the same replica share `replica_id`; two
-# separate replicas both at `dp_id=0` share `dp_id`. The consuming side
-# (`dc-sim`'s own `populate_from_deployment`) must encode registrations with
-# this identical formula for the two sides to agree. 1,000,000 comfortably
-# exceeds any real `attn_data_parallel_size`.
-_ATTN_DP_ENCODING_BASE = 1_000_000
+# Track B Step 48: canonicalised into
+# `replica_id_encoding.encode_group_replica_id`, imported above -- this
+# used to be five independent inline copies of the same formula (this
+# file had four; `dc-sim`'s own `populate_from_deployment` had the
+# fifth), the exact condition ("independently-derived schemes agreeing
+# in whatever configuration someone tested") that produced both
+# replica-identity mismatches this track has chased. `batch.replica_id`
+# is global across every cluster/pool in the whole simulated deployment
+# (`BaseEntity.generate_id()`'s own shared per-subclass counter);
+# `batch.decode_attn_original_dp_id` is local to one replica's own DP
+# lanes. Kept as a local alias only because this file's own five call
+# sites already spell it this way; the canonical value and the guard
+# both live in `replica_id_encoding.py` now.
+_ATTN_DP_ENCODING_BASE = ATTN_DP_ENCODING_BASE
 
 
 class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
@@ -4889,12 +4892,11 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=attn_tp_size,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
-                # Track B Step 41 correction: the DP-lane id, not the
-                # coarser replica id -- see the comment in
-                # _build_mtp_synthetic_batch.
-                replica_id=(
-                    synthetic_batch.replica_id * _ATTN_DP_ENCODING_BASE
-                    + (synthetic_batch.decode_attn_original_dp_id or 0)
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    synthetic_batch.replica_id, "ATTN_TP",
+                    synthetic_batch.decode_attn_original_dp_id,
                 ),
             )
 
@@ -4905,12 +4907,11 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=attn_tp_size,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
-                # Track B Step 41 correction: the DP-lane id, not the
-                # coarser replica id -- see the comment in
-                # _build_mtp_synthetic_batch.
-                replica_id=(
-                    synthetic_batch.replica_id * _ATTN_DP_ENCODING_BASE
-                    + (synthetic_batch.decode_attn_original_dp_id or 0)
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    synthetic_batch.replica_id, "ATTN_TP",
+                    synthetic_batch.decode_attn_original_dp_id,
                 ),
             )
 
@@ -4927,12 +4928,11 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=attn_tp_size,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
-                # Track B Step 41 correction: the DP-lane id, not the
-                # coarser replica id -- see the comment in
-                # _build_mtp_synthetic_batch.
-                replica_id=(
-                    synthetic_batch.replica_id * _ATTN_DP_ENCODING_BASE
-                    + (synthetic_batch.decode_attn_original_dp_id or 0)
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    synthetic_batch.replica_id, "ATTN_TP",
+                    synthetic_batch.decode_attn_original_dp_id,
                 ),
             )
 
@@ -5376,16 +5376,10 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
-                # Track B Step 41 correction: `batch.replica_id` is the
-                # Frontier Replica's own id, constant across that replica's
-                # own DP lanes (see `base_replica_scheduler.py::_create_batch`,
-                # which sets `batch.replica_id = self._replica_id` and,
-                # separately, `batch.decode_attn_original_dp_id = self._dp_id`).
-                # Two same-shaped ATTN_TP groups belonging to different DP
-                # lanes of the same replica need the latter to disambiguate.
-                replica_id=(
-                    batch.replica_id * _ATTN_DP_ENCODING_BASE
-                    + (batch.decode_attn_original_dp_id or 0)
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    batch.replica_id, "ATTN_TP", batch.decode_attn_original_dp_id,
                 ),
             )
             result = self._strip_collective_sim_allreduce_launch_overhead_if_needed(
@@ -5476,19 +5470,12 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
         )
         data_size_bytes = operator.build_payload_bytes(ctx)
         num_devices = operator.num_devices(ctx)
-        # Track B Step 41 correction: for ATTN_TP, same-shaped groups can
-        # differ *both* by which Frontier Replica (`batch.replica_id`,
-        # global across every cluster/pool -- see
-        # `_get_tensor_parallel_communication_time`'s own comment) *and*
-        # by DP lane within it (`batch.decode_attn_original_dp_id`,
-        # replica-local); both must be encoded, since either alone is
-        # ambiguous on its own. MOE_TP/EP-domain groups only ever differ
-        # by Replica, so `batch.replica_id` alone is correct for those.
-        replica_id = (
-            batch.replica_id * _ATTN_DP_ENCODING_BASE
-            + (batch.decode_attn_original_dp_id or 0)
-            if operator.comm_domain == "ATTN_TP"
-            else batch.replica_id
+        # Track B Step 48: canonical encoder -- see replica_id_encoding.py.
+        # (ATTN_TP needs both batch.replica_id and the DP-lane id;
+        # everything else -- EP, MOE_TP -- differs only by Replica, so
+        # encode_group_replica_id returns batch.replica_id unchanged.)
+        replica_id = encode_group_replica_id(
+            batch.replica_id, operator.comm_domain, batch.decode_attn_original_dp_id,
         )
 
         if operator.collective_alias == "allreduce":

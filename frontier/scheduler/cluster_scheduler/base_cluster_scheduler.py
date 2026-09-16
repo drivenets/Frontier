@@ -15,6 +15,9 @@ from frontier.config.config import DISAGGREGATED_ARCHITECTURE_RELEASE_ERROR
 from frontier.execution_time_predictor import (
     BaseExecutionTimePredictor,
 )
+from frontier.execution_time_predictor.replica_id_encoding import (
+    encode_group_replica_id,
+)
 from frontier.model_architectures import (
     ExpertParallelCollective,
     ModelArchitectureProfile,
@@ -1635,11 +1638,16 @@ class BaseClusterScheduler(ABC):
             hidden_size,
         ) = self._get_step3_ep_alltoall_payload_bytes(prospective_batches)
 
+        # Track B Step 48: `replica_id` was already in scope (this
+        # method's own parameter) and never passed through -- the real,
+        # still-live blocker Track B Step 47 found once Step 46's own
+        # ATTN_TP misdiagnosis was corrected.
         ep_collective_exec_time_ms = self._predictor.predict_alltoall_time(
             data_size_bytes=data_size_bytes,
             num_devices=expected_ep_size,
             cluster_type=self._cluster_type,
             comm_domain="EP",
+            replica_id=encode_group_replica_id(replica_id, "EP"),
         )
         ep_collective_sync_time = max(prospective_arrival_times.values())
         (
@@ -1837,11 +1845,14 @@ class BaseClusterScheduler(ABC):
                     f"local_tokens_by_ep_id={local_tokens_by_ep_id}"
                 )
                 # EP alltoall combine phase
+                # Track B Step 48: replica_id threaded through -- see the
+                # dispatch-phase comment above.
                 ep_collective_exec_time_ms = self._predictor.predict_alltoall_time(
                     data_size_bytes=data_size_bytes,
                     num_devices=expected_ep_size,
                     cluster_type=self._cluster_type,
                     comm_domain="EP",
+                    replica_id=encode_group_replica_id(replica_id, "EP"),
                 )
             else:
                 payload_description = (
@@ -1852,6 +1863,7 @@ class BaseClusterScheduler(ABC):
                     num_devices=expected_ep_size,
                     cluster_type=self._cluster_type,
                     comm_domain="EP",
+                    replica_id=encode_group_replica_id(replica_id, "EP"),
                 )
 
             ep_collective_sync_time = max(prospective_arrival_times.values())
