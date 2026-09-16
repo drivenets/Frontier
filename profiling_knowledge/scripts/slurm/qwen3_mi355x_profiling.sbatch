@@ -36,7 +36,7 @@ cd "$FRONTIER_ROOT"
 # directory the profiler writes into must exist and be world-writable before docker starts (pilot job 21280 died on mkdir).
 mkdir -p "$AITER_CACHE_DIR" data/profiling/sweep_work/logs data/profiling/sweep_work_pilot data/profiling_pilot \
   "${WORK_DIR:-data/profiling/sweep_work}" "${COLLECT_DIR:-data/profiling}/compute/mi355x/$MODEL"
-chmod -R a+rwX data/profiling data/profiling_pilot 2>/dev/null || true   # dirs a previous container created belong to nobody; leave them
+chmod -R a+rwX data/profiling data/profiling_pilot "${WORK_DIR:-data/profiling/sweep_work}" "${COLLECT_DIR:-data/profiling}" 2>/dev/null || true   # dirs a previous container created belong to nobody; leave them
 [ "$STAGE" = linear_op ] && IMAGE="$LINEAR_IMAGE"
 docker image inspect "$IMAGE" >/dev/null || { echo "image $IMAGE not on $(hostname)" >&2; exit 1; }
 echo "host=$(hostname) job=${SLURM_JOB_ID:-local} stage=$STAGE aiter_cache=$AITER_CACHE_DIR commit=${FRONTIER_COMMIT:-unknown (pass --export=ALL,FRONTIER_COMMIT=<sha>)} image=$IMAGE"
@@ -60,7 +60,8 @@ case "$STAGE" in
       || { echo "pilot produced no collected CSV" >&2; exit 1; }
     ;;
   attention)
-    run_attention env AITER_TPS="${AITER_TPS:-1 2 4 8}" MAX_SEQ_LEN=16384 MAX_MODEL_LEN=16384 \
+    # MAX_SEQ_LEN, DECODE_KV_CACHE_SIZE_LIST, TRUE_MIXED_* are taken from the job environment when set (--export=ALL)
+    run_attention env AITER_TPS="${AITER_TPS:-1 2 4 8}" MAX_SEQ_LEN="${MAX_SEQ_LEN:-16384}" MAX_MODEL_LEN="${MAX_SEQ_LEN:-16384}" \
       AITER_BLOCK_SIZES="${AITER_BLOCK_SIZES:?set AITER_BLOCK_SIZES=1 or 16}" \
       WORK_DIR="${WORK_DIR:-data/profiling/sweep_work}" COLLECT_DIR="${COLLECT_DIR:-data/profiling}"
     # the sweep is deliberately non-fatal per cell; make Slurm report the failure
@@ -68,14 +69,17 @@ case "$STAGE" in
       || { echo "cell block${AITER_BLOCK_SIZES} produced no collected CSV" >&2; exit 1; }
     ;;
   linear_op)
+    # Token grid: dense by default (every count to 2048, every 8 to 8192, every 16 to 16384; 4000 excluded = known GPU fault),
+    # 3,327 values; a strict superset of the profiler's 386-value grid. Override with LINEAR_TOKENS_PY (a python expression).
+    TOKENS_PY="${LINEAR_TOKENS_PY:-sorted((set(range(1, 2049)) | set(range(2056, 8193, 8)) | set(range(8208, 16385, 16))) - set([4000]))}"  # no braces: they end the \${var:-} default early
     TOKENS=$(docker run --rm -v "$PWD":/workspace/frontier -w /workspace/frontier -e PYTHONPATH=/workspace/frontier "$IMAGE" \
-      python -c 'from frontier.profiling.utils import get_num_tokens_to_profile as g; print(*[t for t in g(16384) if t != 4000])')
+      python -c "print(*$TOKENS_PY)")
     docker run --rm "${DOCKER_GPU_FLAGS[@]}" \
       -v "$PWD":/workspace/frontier -w /workspace/frontier -e PYTHONPATH=/workspace/frontier \
       -e FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1 -e HSA_ENABLE_COREDUMP=0 -e CUDA_VISIBLE_DEVICES="$GPU_IDS" -e HIP_VISIBLE_DEVICES="$GPU_IDS" \
       "$IMAGE" python -m frontier.profiling.linear_op.main --disable_ray --yes --device mi355x --models "$MODEL" --is_moe \
-        --num_gpus 8 --num_tensor_parallel_workers 1 2 4 8 --precision BF16 --profile_method cuda_event \
-        --max_tokens 16384 --num_tokens_list $TOKENS --output_dir data/profiling \
+        --num_gpus "${LINEAR_NUM_GPUS:-8}" --num_tensor_parallel_workers 1 2 4 8 --precision BF16 --profile_method cuda_event \
+        --max_tokens 16384 --num_tokens_list $TOKENS --output_dir "${COLLECT_DIR:-data/profiling}" \
       > data/profiling/sweep_work/logs/linear_op.log 2>&1
     ;;
   *) echo "unknown STAGE=$STAGE" >&2; exit 2 ;;

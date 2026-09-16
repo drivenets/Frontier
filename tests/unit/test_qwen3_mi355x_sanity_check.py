@@ -128,13 +128,13 @@ def test_passes_on_generator_built_dataset(dataset: Path) -> None:
         (("attention",), lambda df: df.drop(columns=["head_dim"]), "FAIL: attention: missing columns ['head_dim']"),
         (("attention",), lambda df: df.assign(attention_backend=["TORCH_SDPA"] + ["AITER"] * (len(df) - 1)), "FAIL: attention: attention_backend"),
         (SHAPE_FILES, lambda df: df[~((df.num_tensor_parallel_workers == 8) & (df.block_size == 16) & ~df.is_prefill.astype(bool)
-                                      & (df.batch_size == 512) & (df.kv_cache_size == 16384))], "FAIL: block16 TP8: 1 missing decode shapes at TP>2"),
+                                      & (df.batch_size == 512) & (df.kv_cache_size == 16384))], "FAIL: block16 TP8: 1 missing decode shapes (not explained by the KV memory budget)"),
         (BLOCK1_FILES, lambda df: pd.concat([df, df[(df.block_size == 1) & (df["mode"] == "even")].iloc[[0]].assign(batch_size=3)]),
          "FAIL: block1 TP1: 1 unplanned shapes"),
         (SHAPE_FILES, lambda df: df[~((df.num_tensor_parallel_workers == 8) & (df.block_size == 16) & df.is_prefill.astype(bool)
                                       & (df.prefill_chunk_size == 16384) & (df.kv_cache_size == 0) & (df["mode"] == "even"))],
          "FAIL: block16 TP8: missing prefill shapes"),
-        (TM_FILES, lambda df: df[~_is_tm_tp8_b16_max(df)], "FAIL: block16 TP8: 1 missing true-mixed shapes at TP>2"),
+        (TM_FILES, lambda df: df[~_is_tm_tp8_b16_max(df)], "FAIL: block16 TP8: 1 missing true-mixed shapes (not explained by the KV memory budget)"),
         (TM_BLOCK1_FILES, lambda df: pd.concat([df, df[(df.block_size == 1) & (df["mode"] == "true_mixed")].iloc[[0]].assign(decode_batch_size=3)]),
          "FAIL: block1 TP1: 1 unplanned true-mixed shapes"),
         (("attention",), lambda df: df.assign(**{"time_stats.attn_decode.count": 49}), "FAIL: attention: attn_decode.count != 50"),
@@ -151,7 +151,7 @@ def test_passes_on_generator_built_dataset(dataset: Path) -> None:
         (SHAPE_FILES, lambda df: df[~((df.num_tensor_parallel_workers == 8) & (df.block_size == 16) & (df["mode"] == "even"))],
          "FAIL: block16 TP8: missing prefill shapes"),
         (TM_FILES, lambda df: df[~((df.num_tensor_parallel_workers == 8) & (df.block_size == 16) & (df["mode"] == "true_mixed"))],
-         "FAIL: block16 TP8: 360 missing true-mixed shapes at TP>2"),
+         "FAIL: block16 TP8: 360 missing true-mixed shapes (not explained by the KV memory budget)"),
         (("attention",), lambda df: df.assign(max_model_len=8192), "FAIL: attention: max_model_len/precision/measurement"),
         (("attention",), lambda df: df.assign(profiling_precision="FP16"), "FAIL: attention: max_model_len/precision/measurement"),
         (("attention",), lambda df: df.assign(warmup_steps=2), "FAIL: attention: warmup/active steps"),
@@ -181,13 +181,14 @@ def test_fails_with_exact_message_and_no_traceback(dataset: Path, names, mutate,
 @pytest.mark.parametrize(
     ("mutate", "expected_fail"),
     [
-        (lambda df: df[df.num_tokens != 16384], "FAIL: linear_op: 1540 rows, 385 token values (expected 1544 / 386)"),
+        (lambda df: df[df.num_tokens != 16384], "FAIL: linear_op: 1540 rows, 385 token values (need the 386-value base grid at every TP; missing [16384])"),
+        (lambda df: df[~((df.num_tokens == 16384) & (df.num_tensor_parallel_workers == 8))], "FAIL: linear_op: 1543 rows, 386 token values"),
         (lambda df: df.assign(**{"time_stats.emb.median": 0.1}), "FAIL: linear_op: emb must be recorded on TP=1 rows only"),
         (lambda df: df.assign(n_embd=4096), "FAIL: linear_op: dims/TP/qk_norm"),
         (lambda df: df.assign(**{"time_stats.add.median": 0.01}), "FAIL: linear_op: add scope present"),
         (lambda df: df.assign(**{"time_stats.attn_post_proj.median": float("nan")}), "FAIL: linear_op: NaN in attn_pre/post_proj"),
     ],
-    ids=["token-missing", "emb-on-tp8", "n_embd", "add-scope-present", "post-proj-nan"],
+    ids=["token-missing", "token-missing-one-tp", "emb-on-tp8", "n_embd", "add-scope-present", "post-proj-nan"],
 )
 def test_linear_op_failures_report_exact_line(dataset: Path, mutate, expected_fail: str) -> None:
     _rewrite(dataset, ("linear_op",), mutate)

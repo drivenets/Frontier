@@ -11,7 +11,7 @@ Two generations of data sit in this directory. Only the **new** generation shoul
 
 | | NEW (2026-09-15) | OLD (pre-2026-09, superseded) |
 |---|---|---|
-| Files | `attention*.csv` without a `_sdpa_` infix, `linear_op.csv` | `*_sdpa_block16.csv`, `linear_op_maxtokens4096.csv`, `moe.csv` |
+| Files | `attention*.csv` without a `_sdpa_` infix, `linear_op.csv`, `linear_op_grid386.csv` | `*_sdpa_block16.csv`, `linear_op_maxtokens4096.csv`, `moe.csv` |
 | Attention backend | `attention_backend == "AITER"` (production kernels) | `TORCH_SDPA` (portable reference) |
 | Columns present | `head_dim`, `warmup_steps`, `active_steps`, `time_stats.<op>.warmup_count`, `time_stats.<op>.samples` | none of these |
 | Timed runs per shape | `time_stats.<op>.count == 50` | 5 (attention) / 20 (linear_op) |
@@ -33,7 +33,8 @@ Rule of thumb in code: `"head_dim" in df.columns and set(df.attention_backend) =
 | `attention.csv` | 22,152 | canonical: union of the two `attention_aiter_block*.csv` |
 | `attention_true_mixed.csv` | 2,880 | canonical: union of the two true-mixed files |
 | `attention_combined.csv` | 25,032 | canonical: union of the two combined files — **this is what the simulator/regressor reads** |
-| `linear_op.csv` | 1,544 | attention-layer GEMMs/norms/embedding vs `num_tokens` |
+| `linear_op.csv` | 13,308 | attention-layer GEMMs/norms/embedding vs `num_tokens` (dense 3,327-value grid, 2026-09-15 second run) |
+| `linear_op_grid386.csv` | 1,544 | same ops on the profiler's default 386-value grid (first run; superseded, kept for comparison) |
 
 The canonical trio is byte-for-byte the concatenation of the per-block files (built with
 `pd.read_csv(..., float_precision="round_trip")` then `pd.concat().to_csv()`); the per-block files are kept because each
@@ -110,9 +111,9 @@ noise-like. Any warm-up analysis must use `samples` (positions 0–2 vs 3–52),
 
 ## 5. `linear_op.csv`
 
-One row = one (`num_tokens`, TP) point for the attention-layer linear ops of one layer. `num_tokens` takes 386 values from 1 to
-16384 (the profiler's `get_num_tokens_to_profile(16384)` grid **minus 4000**, which faults the GPU on this stack);
-TP ∈ {1, 2, 4, 8}. Ops: `attn_pre_proj` = fused QKV projection **including the QK-norm** (Qwen3 applies it inside this scope),
+One row = one (`num_tokens`, TP) point for the attention-layer linear ops of one layer. `num_tokens` takes **3,327 values**:
+every count 1…2048, every 8th from 2056 to 8192, every 16th from 8208 to 16384, **minus 4000** (faults the GPU on this stack);
+this is a strict superset of the profiler's default 386-value grid, which the earlier run `linear_op_grid386.csv` used. TP ∈ {1, 2, 4, 8}. Ops: `attn_pre_proj` = fused QKV projection **including the QK-norm** (Qwen3 applies it inside this scope),
 `attn_post_proj` = output projection, `attn_rope`, `input_layernorm`, `post_attention_layernorm`, `emb`. Same
 `samples/warmup_count/count/…` scheme as attention (3 + 50 runs). **`emb`, `input_layernorm` and `post_attention_layernorm`
 are recorded on TP = 1 rows only and are NaN on TP > 1 rows by design** (replicated ops are split to TP 1 by the profiler).

@@ -1,4 +1,4 @@
-"""Sanity-check the collected Qwen3-30B-A3B MI355X dataset dir (plan Step 4). Usage: sanity_check.py <dataset dir>"""
+"""Sanity-check the collected Qwen3-30B-A3B MI355X dataset dir (plan Step 4). Usage: sanity_check.py <dataset dir> [--max-seq-len 16384]"""
 import json, sys
 from pathlib import Path
 import pandas as pd
@@ -7,13 +7,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # run by path with
 from frontier.profiling.utils import get_attention_input_combinations, get_num_tokens_to_profile, get_true_mixed_attention_input_combinations
 
 d = Path(sys.argv[1]); fails, notes = [], []
+MSL = int(sys.argv[sys.argv.index("--max-seq-len") + 1]) if "--max-seq-len" in sys.argv else 16384
 ok = lambda cond, msg: None if cond else fails.append(msg)
 def same_rows(a, b):  # same multiset of rows, order-insensitive, NaN-safe
     if len(a) != len(b) or set(a.columns) != set(b.columns): return False
     h = lambda df: np.sort(pd.util.hash_pandas_object(df.reindex(columns=sorted(df.columns)), index=False).to_numpy())
     return np.array_equal(h(a), h(b))
 OPS = ("attn_kv_cache_save", "attn_prefill", "attn_decode")
-BATCH = [1, 2, 4, 8, 16, 24, 32, 48, 64, 96, 128, 160, 192, 256, 320, 384, 448, 512]; DK = [128, 512, 1024, 2048, 4096, 8192, 16384]
+BATCH = [1, 2, 4, 8, 16, 24, 32, 48, 64, 96, 128, 160, 192, 256, 320, 384, 448, 512]
+DK = [v for v in (128, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536) if v <= MSL]
+TM_CHUNKS = [c for c in (1024, 4096, 8192, 16384, 32768) if c < MSL]
+def token_budget(tp, block):  # what the profiler's memory filter allows: utils.get_max_num_blocks * block_size, with the MI355X total (309,220,868,096 B)
+    return int(0.9 * 309220868096 // (2 * block * max(1, 4 // tp) * 128 * 2 * 48)) * block
 REQ = {"n_embd", "n_q_head", "n_kv_head", "head_dim", "block_size", "num_tensor_parallel_workers", "max_model_len", "batch_size",
        "prefill_chunk_size", "kv_cache_size", "is_prefill", "attention_backend", "profiling_precision", "measurement_type",
        "warmup_steps", "active_steps", *(f"time_stats.{op}.{s}" for op in OPS for s in ("median", "count", "samples"))}
@@ -28,7 +33,7 @@ for n, df in att.items():
     ok(set(df.head_dim) == {128} and set(df.n_q_head) == {32} and set(df.n_kv_head) == {4} and set(df.n_embd) == {2048}, f"{n}: model dims wrong")
     ok(set(df.attention_backend) == {"AITER"}, f"{n}: attention_backend {sorted(set(df.attention_backend))} != AITER")
     ok(set(df.block_size) == {1, 16} and set(df.num_tensor_parallel_workers) == {1, 2, 4, 8}, f"{n}: block/TP sets {sorted(set(df.block_size))} {sorted(set(df.num_tensor_parallel_workers))}")
-    ok(set(df.max_model_len) == {16384} and set(df.profiling_precision) == {"BF16"} and set(df.measurement_type) == {"CUDA_EVENT"}, f"{n}: max_model_len/precision/measurement")
+    ok(set(df.max_model_len) == {MSL} and set(df.profiling_precision) == {"BF16"} and set(df.measurement_type) == {"CUDA_EVENT"}, f"{n}: max_model_len/precision/measurement")
     ok(set(df.warmup_steps) == {3} and set(df.active_steps) == {50}, f"{n}: warmup/active steps")
     for op in OPS:
         ok(set(df[f"time_stats.{op}.count"]) == {50}, f"{n}: {op}.count != 50")
@@ -68,7 +73,7 @@ if not fails:
     notes.append(f"block1/block16 decode median ratio at the same shape: p50 {xr.quantile(.5):.2f} p5 {xr.quantile(.05):.2f} p95 {xr.quantile(.95):.2f}")
     tm = att["attention_true_mixed"]
     exp_tm = {(len(a.prefill_seq_lens), a.prefill_seq_lens[0], a.decode_batch_size, a.decode_kv_cache_sizes[0]) for a in get_true_mixed_attention_input_combinations(
-        max_seq_len=16384, prefill_batch_sizes=[1, 2], prefill_chunk_sizes=[1024, 4096, 8192], decode_batch_sizes=BATCH, decode_kv_cache_sizes=DK, prefill_kv_cache_size=0)}
+        max_seq_len=MSL, prefill_batch_sizes=[1, 2], prefill_chunk_sizes=TM_CHUNKS, decode_batch_sizes=BATCH, decode_kv_cache_sizes=DK, prefill_kv_cache_size=0)}
     if not missing_tm:
         tmd = tm[tm.num_prefill_seqs == 1].merge(dec, left_on=["block_size", "num_tensor_parallel_workers", "decode_batch_size", "decode_avg_kv_cache_size"],
                                                  right_on=["block_size", "num_tensor_parallel_workers", "batch_size", "kv_cache_size"], suffixes=("_tm", "_even"))
@@ -81,10 +86,11 @@ if not fails:
             g = tm[(tm.block_size == b) & (tm.num_tensor_parallel_workers == tp)]
             got = {(int(n), json.loads(p)[0], int(db), json.loads(k)[0]) for n, p, db, k in zip(g.num_prefill_seqs, g.prefill_seq_lens, g.decode_batch_size, g.decode_kv_cache_sizes)}
             ok(got <= exp_tm, f"block{b} TP{tp}: {len(got - exp_tm)} unplanned true-mixed shapes")
-            ok(not (exp_tm - got) or tp in (1, 2), f"block{b} TP{tp}: {len(exp_tm - got)} missing true-mixed shapes at TP>2")
+            unexplained = [k for k in exp_tm - got if k[0] * k[1] + k[2] * (1 + k[3]) < 0.95 * token_budget(tp, b)]
+            ok(not unexplained, f"block{b} TP{tp}: {len(unexplained)} missing true-mixed shapes (not explained by the KV memory budget)")
             ok((1, 1024, 1, 128) in got, f"block{b} TP{tp}: smallest true-mixed shape missing (memory filter cannot explain)")
             notes.append(f"block{b} TP{tp}: {len(g)}/{len(exp_tm)} true-mixed rows, {len(exp_tm - got)} memory-filtered")
-    combos = get_attention_input_combinations(16384, 1, 512, False, False, BATCH, DK, True, -1)
+    combos = get_attention_input_combinations(MSL, 1, 512, False, False, BATCH, DK, True, -1)
     exp = {(a.prefill_chunk_size, a.kv_cache_size, a.batch_size, a.is_prefill) for a in combos}  # 2772 attempts, 2497 unique keys
     for b, tp in [(b, tp) for b in (1, 16) for tp in (1, 2, 4, 8)]:  # explicit grid: a wholly missing cell must fail
         g = std[(std.block_size == b) & (std.num_tensor_parallel_workers == tp)]
@@ -92,7 +98,8 @@ if not fails:
         ok(got <= exp, f"block{b} TP{tp}: {len(got - exp)} unplanned shapes {sorted(got - exp)[:3]}")
         miss = exp - got
         ok(all(not m[3] for m in miss), f"block{b} TP{tp}: missing prefill shapes {sorted(m for m in miss if m[3])[:5]}")
-        ok(not miss or tp in (1, 2), f"block{b} TP{tp}: {len(miss)} missing decode shapes at TP>2 (memory filter cannot explain) {sorted(miss)[:3]}")
+        unexplained = [m for m in miss if m[2] * (m[0] + m[1]) < 0.95 * token_budget(tp, b)]
+        ok(not unexplained, f"block{b} TP{tp}: {len(unexplained)} missing decode shapes (not explained by the KV memory budget) {sorted(unexplained)[:3]}")
         ok((0, 128, 1, False) in got, f"block{b} TP{tp}: smallest decode shape missing (memory filter cannot explain)")
         notes.append(f"block{b} TP{tp}: {len(g)}/{len(combos)} standard rows, {len(miss)} memory-filtered decode shapes")
 
@@ -101,7 +108,8 @@ tokens = set(get_num_tokens_to_profile(16384)) - {4000}
 ok(set(lin.num_tensor_parallel_workers) == {1, 2, 4, 8} and set(lin.n_head) == {32} and set(lin.n_kv_head) == {4} and set(lin.n_embd) == {2048} and lin.use_qk_norm.all(), "linear_op: dims/TP/qk_norm")
 ok(lin["time_stats.attn_pre_proj.median"].notna().all() and lin["time_stats.attn_post_proj.median"].notna().all(), "linear_op: NaN in attn_pre/post_proj")
 ok(not [c for c in lin.columns if c.startswith("time_stats.add.")], "linear_op: add scope present (should be fused into RMSNorm)")
-ok(set(lin.num_tokens) == tokens and len(lin) == len(tokens) * 4, f"linear_op: {len(lin)} rows, {lin.num_tokens.nunique()} token values (expected {len(tokens) * 4} / {len(tokens)})")
+ok(tokens <= set(lin.num_tokens) and len(lin) == lin.num_tokens.nunique() * 4, f"linear_op: {len(lin)} rows, {lin.num_tokens.nunique()} token values (need the {len(tokens)}-value base grid at every TP; missing {sorted(tokens - set(lin.num_tokens))[:5]})")
+notes.append(f"linear_op: {lin.num_tokens.nunique()} token values x 4 TP = {len(lin)} rows")
 ok(lin[lin.num_tensor_parallel_workers > 1]["time_stats.emb.median"].isna().all() and lin[lin.num_tensor_parallel_workers == 1]["time_stats.emb.median"].notna().all(),
    "linear_op: emb must be recorded on TP=1 rows only (replicated ops are split to TP=1)")
 

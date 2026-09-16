@@ -122,7 +122,9 @@ submission). It reads `STAGE` (`pilot | linear_op | attention`) and, for attenti
          --output_dir data/profiling' > data/profiling/sweep_work/logs/linear_op.log 2>&1
    ```
    `--max_tokens 16384` is required: the default is 4096 and `get_num_tokens_to_profile` rejects list values above it.
-   386 token values × 4 TP = 1,544 rows. 4000 is excluded because it faults the GPU at TP=1
+   Grid (2026-09-15 amendment, user request "3k shapes"): every token count 1…2048, every 8th to 8192, every 16th to 16384
+   minus 4000 → 3,327 values × 4 TP = 13,308 rows (`LINEAR_TOKENS_PY` in the sbatch); the first run used the profiler's default
+   386-value grid (kept as `linear_op_grid386.csv`). 4000 is excluded because it faults the GPU at TP=1
    (`examples/profiling/profile_mi355x.sh`). Replicated ops (`emb`, layernorms) are NaN on TP>1 rows by
    design (`linear_op/main.py:581-586`). Writes `data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv`.
 4. `STAGE=pilot`: the attention path with `AITER_TPS=1 MAX_SEQ_LEN=2048 AITER_BLOCK_SIZES=16
