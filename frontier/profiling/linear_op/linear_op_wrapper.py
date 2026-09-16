@@ -12,6 +12,7 @@ from frontier.profiling.common.utils import (
 )
 from frontier.profiling.common.timer_stats_store import TimerStatsStore
 from frontier.profiling.linear_op.linear_op_impl import GPTModel
+from frontier.profiling.linear_op import spike_diag
 from frontier.profiling.linear_op.profiling_plan import _share_expert_profiling_names
 from frontier.profiling.utils import (
     ProfileMethod,
@@ -21,7 +22,7 @@ from frontier.profiling.utils import (
 from frontier.profiling.utils.record_function_tracer import RecordFunctionTracer
 
 WARMUP_STEPS = 3
-ACTIVE_STEPS = 50
+ACTIVE_STEPS = int(os.environ.get("FRONTIER_LINEAR_ACTIVE_STEPS", "50"))  # override only for the spike experiments
 
 
 class LinearOpWrapper:
@@ -160,20 +161,29 @@ class LinearOpWrapper:
         else:
             self.timer_stats_store.clear_stats()
 
+            diag = spike_diag.enabled
             for _ in range(WARMUP_STEPS):
+                if diag:
+                    spike_diag.forward_begin()
                 self.model(
                     input_ids,
                     positions,
                 )
+                if diag:
+                    spike_diag.forward_end()
 
             torch.cuda.synchronize()
             self.timer_stats_store.mark_warmup_end()
 
             for _ in range(ACTIVE_STEPS):
+                if diag:
+                    spike_diag.forward_begin()
                 self.model(
                     input_ids,
                     positions,
                 )
+                if diag:
+                    spike_diag.forward_end()
 
             torch.cuda.synchronize()
 

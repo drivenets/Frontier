@@ -167,6 +167,9 @@ def _worker_init(gpu_id: int, gpu_local_idx: int):
     _CUDA_INITIALIZED = True
     _CUDA_GPU_ID = gpu_id
     _CUDA_GPU_LOCAL_IDX = gpu_local_idx
+    from frontier.profiling.linear_op import spike_diag
+
+    spike_diag.worker_init(gpu_id)  # no-op unless FRONTIER_SPIKE_DIAG is set
 
 
 def _worker_profile_linear_op_task(
@@ -205,6 +208,9 @@ def _worker_profile_linear_op_task(
             f"Worker current device {torch_module.cuda.current_device()} does not match expected local index {gpu_local_idx}."
         )
 
+    from frontier.profiling.linear_op import spike_diag
+
+    spike_diag.task_begin(num_tokens, wrapper_args["num_tensor_parallel_workers"])
     # Reconstruct ModelConfig from dict
     model_config = ModelConfig(**wrapper_args["model_config_dict"])
 
@@ -219,6 +225,7 @@ def _worker_profile_linear_op_task(
     )
 
     result = wrapper.profile(num_tokens)
+    spike_diag.task_end(num_tokens, wrapper_args["num_tensor_parallel_workers"], result)
     return result
 
 

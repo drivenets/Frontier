@@ -77,10 +77,11 @@ case "$STAGE" in
     docker run --rm "${DOCKER_GPU_FLAGS[@]}" \
       -v "$PWD":/workspace/frontier -w /workspace/frontier -e PYTHONPATH=/workspace/frontier \
       -e FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1 -e HSA_ENABLE_COREDUMP=0 -e CUDA_VISIBLE_DEVICES="$GPU_IDS" -e HIP_VISIBLE_DEVICES="$GPU_IDS" \
+      ${LINEAR_DOCKER_ENV:-} \
       "$IMAGE" python -m frontier.profiling.linear_op.main --disable_ray --yes --device mi355x --models "$MODEL" --is_moe \
         --num_gpus "${LINEAR_NUM_GPUS:-8}" --num_tensor_parallel_workers 1 2 4 8 --precision BF16 --profile_method cuda_event \
         --max_tokens 16384 --num_tokens_list $TOKENS --output_dir "${COLLECT_DIR:-data/profiling}" \
-      > data/profiling/sweep_work/logs/linear_op.log 2>&1
+      > "data/profiling/sweep_work/logs/linear_op${LINEAR_LOG_SUFFIX:-}.log" 2>&1
     ;;
   *) echo "unknown STAGE=$STAGE" >&2; exit 2 ;;
 esac
