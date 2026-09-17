@@ -1,4 +1,8 @@
-# Measurement contract for the linear_op dataset (draft for agreement, 2026-09-17)
+# Measurement contract for the linear_op dataset (agreed 2026-09-17: option (a))
+
+**Status: AGREED by the dataset owner on 2026-09-17 — option (a)**, kernel-only device time per op at a stated clock condition, plus a
+separately measured launch/gap overhead term (§3). The recollection plan is derived from this contract (plan-loop); any change to the
+contract reopens the plan.
 
 Purpose: state exactly which two points on the host → queue → device → completion timeline each column subtracts, at which clock
 condition, so that a column difference is never mistaken for a physical effect. No recollection starts before this is agreed.
@@ -24,7 +28,7 @@ is `Σ kernel_i + Σ dispatch gaps + (n+1) record costs (~2.6–3.7 µs each)`.
 | `sclk_mhz_*_start/end` | 2M-cycle spin / elapsed | concurrent shader clock immediately before the timed loop (after warm-up) and immediately after it | — |
 | `host_enqueue_per_forward_ms*` | host wall to the last launch call / N | host launch pace; ≈ wall ⇒ host-bound or queue-throttled | — |
 
-## 3. What hetcalc's linear-op term should be — recommendation: (a), with two separately measured terms
+## 3. What hetcalc's linear-op term should be — recommendation: (a), with two separately measured terms (AGREED)
 
 **(a)** kernel-only device time per op at a **stated clock condition**, plus a separately measured **launch/gap overhead term**.
 **(b)** inclusive per-op latency in a stated regime (host-bound or GPU-bound).
