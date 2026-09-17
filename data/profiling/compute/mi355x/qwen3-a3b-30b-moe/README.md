@@ -5,41 +5,70 @@ node) with Frontier's operator profilers. Model config: `data/config/models/qwen
 head_dim 128, hidden 2048, 48 layers, BF16). Plan, run record and sanity script live in
 `profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/` (`01_plan.md`, `02_run_record.md`, `sanity_check.py`).
 
-## 1. New data vs old data — how to tell
+## 1. Layout — canonical files vs runs
 
-Two generations of data sit in this directory. Only the **new** generation should be used for analysis.
+```
+qwen3-a3b-30b-moe/
+├── attention.csv, attention_true_mixed.csv, attention_combined.csv   canonical AITER attention data (16k context)
+├── linear_op.csv                                                     canonical linear-op data (dense 3,327-token grid)
+├── README.md                                                         this file
+└── runs/<YYYY-MM-DD_HHMM>_<what>/                                     one folder per profiler run, each with a RUN.md
+```
 
-| | NEW (2026-09-15) | OLD (pre-2026-09, superseded) |
+**The root CSVs are the data to use.** Each is a verbatim copy (or, for attention, the block-1 + block-16 union) of the files
+in one run folder; the run folder's `RUN.md` says when/where/how it was collected and what differed from the previous run.
+Never analyse a run folder without reading its `RUN.md` first: some folders are diagnostics, not full grids.
+
+| Run folder | Content | Status |
 |---|---|---|
-| Files | `attention*.csv` without a `_sdpa_` infix, `linear_op.csv`, `linear_op_grid386.csv` | `*_sdpa_block16.csv`, `linear_op_maxtokens4096.csv`, `moe.csv` |
+| `runs/legacy_pre-2026-09_torch-sdpa/` | TORCH_SDPA attention (block 16, 9.4k ctx, 5 reps), linear_op ≤4096 tokens (20 reps), `moe.csv` | **old — do not use** |
+| `runs/2026-09-15_1142_attention_16k/` | AITER attention, 16k, blocks 1 and 16, per-block files | **canonical**: root `attention*.csv` = block1 ∪ block16 |
+| `runs/2026-09-15_1142_linear_op_grid386/` | linear ops, 386-token default grid | superseded by the dense run; kept for comparison |
+| `runs/2026-09-15_1308_linear_op_dense3327/` | linear ops, dense 3,327-token grid | **canonical**: root `linear_op.csv`; has the unexplained run-11 spike (32 rows) |
+| `runs/2026-09-15_1315_attention_32k/` | AITER attention, 32k, blocks 1 and 16, per-block files + union trio | validated (sanity PASS); not merged into root |
+| `runs/2026-09-15_1315_attention_64k/` | AITER attention, 64k, blocks 1 and 16, per-block files + union trio | validated (sanity PASS); not merged into root |
+| `runs/2026-09-15_1359_linear_op_spike_repro/` | 26 token values around the spike, 3 runs | diagnostic only |
+| `runs/2026-09-16_0629_linear_op_dense3327_rerun/` | dense grid again, same command, node 8 | validated (sanity PASS); **spike reproduced exactly** → independent replicate, root file unchanged |
+| `runs/2026-09-17_0846_linear_op_validation_grid_two_column/` | linear ops, 8-token validation grid × TP {1,2,4,8}, **two timing columns** (legacy + GPU-bound), see §5b | validated (`sanity_check.py --tokens-grid` PASS); the fixed profiler's first output — the root `linear_op.csv` is still single-column and host-bound below ~5k tokens at TP>1 (§5b) |
+
+Adding a run: create `runs/<date>_<HHMM>_<what>/`, drop the profiler's CSVs in, write `RUN.md` (when, jobs, node, image,
+commit, command, ops × shapes × repetitions table, "what differs from the previous run and why" with links, results),
+then update the table above and, if the run becomes canonical, replace the root file and say so in both places.
+
+## 2. New data vs old data — how to tell
+
+Only the **new** generation (AITER, 2026-09-15 onwards) should be used for analysis.
+
+| | NEW (2026-09-15 →) | OLD (`runs/legacy_pre-2026-09_torch-sdpa/`) |
+|---|---|---|
 | Attention backend | `attention_backend == "AITER"` (production kernels) | `TORCH_SDPA` (portable reference) |
 | Columns present | `head_dim`, `warmup_steps`, `active_steps`, `time_stats.<op>.warmup_count`, `time_stats.<op>.samples` | none of these |
 | Timed runs per shape | `time_stats.<op>.count == 50` | 5 (attention) / 20 (linear_op) |
 | Block sizes | 1 **and** 16 | 16 only |
-| Context ceiling | `max_model_len == 16384` | 9472 (attention), 4096 tokens (linear_op) |
+| Context ceiling | `max_model_len` 16384 (root), 32768 / 65536 (run folders) | 9472 (attention), 4096 tokens (linear_op) |
 
 Rule of thumb in code: `"head_dim" in df.columns and set(df.attention_backend) == {"AITER"}` ⇒ new attention data;
 `"warmup_steps" in df.columns` ⇒ new linear_op data. `moe.csv` is old and MoE was **not** re-collected (deferred).
 
-## 2. File inventory (new data)
+## 2b. File inventory (root and the 16k run)
 
 | File | Rows | What it holds |
 |---|---|---|
-| `attention_aiter_block1.csv` | 11,076 | standard rows, `block_size == 1` (SGLang page size) |
-| `attention_aiter_block16.csv` | 11,076 | standard rows, `block_size == 16` (vLLM default) |
-| `attention_true_mixed_aiter_block1.csv` | 1,440 | true-mixed rows, block 1 |
-| `attention_true_mixed_aiter_block16.csv` | 1,440 | true-mixed rows, block 16 |
-| `attention_combined_aiter_block{1,16}.csv` | 12,516 each | standard + true-mixed for that block size |
-| `attention.csv` | 22,152 | canonical: union of the two `attention_aiter_block*.csv` |
+| `attention.csv` | 22,152 | canonical: union of the two `attention_aiter_block*.csv` of the 16k run |
 | `attention_true_mixed.csv` | 2,880 | canonical: union of the two true-mixed files |
-| `attention_combined.csv` | 25,032 | canonical: union of the two combined files — **this is what the simulator/regressor reads** |
-| `linear_op.csv` | 13,308 | attention-layer GEMMs/norms/embedding vs `num_tokens` (dense 3,327-value grid, 2026-09-15 second run) |
-| `linear_op_grid386.csv` | 1,544 | same ops on the profiler's default 386-value grid (first run; superseded, kept for comparison) |
+| `attention_combined.csv` | 25,032 | canonical: standard + true-mixed — **this is what the simulator/regressor reads** |
+| `linear_op.csv` | 13,308 | attention-layer GEMMs/norms/embedding vs `num_tokens` (dense 3,327-value grid) |
+| `runs/2026-09-15_1142_attention_16k/attention_aiter_block{1,16}.csv` | 11,076 each | standard rows for one block size (1 = SGLang page size, 16 = vLLM default) |
+| `…/attention_true_mixed_aiter_block{1,16}.csv` | 1,440 each | true-mixed rows for one block size |
+| `…/attention_combined_aiter_block{1,16}.csv` | 12,516 each | standard + true-mixed for one block size |
+| `runs/2026-09-15_1315_attention_32k/attention*.csv` | 21,979 std / 2,240 tm per block | same six per-block files plus the union trio, 32k context |
+| `runs/2026-09-15_1315_attention_64k/attention*.csv` | 44,099 std / 3,190 tm per block | same, 64k context |
 
 The canonical trio is byte-for-byte the concatenation of the per-block files (built with
 `pd.read_csv(..., float_precision="round_trip")` then `pd.concat().to_csv()`); the per-block files are kept because each
 was one independent profiler run. The simulator selects rows by exact match on `block_size`, so mixing both block sizes in
-one file is intended.
+one file is intended. The 32k/64k trios are **not** merged into the root files: the root stays one context per file so the
+`max_model_len`-dependent prefill grids do not overlap.
 
 ## 3. What one attention row is
 
@@ -113,7 +142,7 @@ noise-like. Any warm-up analysis must use `samples` (positions 0–2 vs 3–52),
 
 One row = one (`num_tokens`, TP) point for the attention-layer linear ops of one layer. `num_tokens` takes **3,327 values**:
 every count 1…2048, every 8th from 2056 to 8192, every 16th from 8208 to 16384, **minus 4000** (faults the GPU on this stack);
-this is a strict superset of the profiler's default 386-value grid, which the earlier run `linear_op_grid386.csv` used. TP ∈ {1, 2, 4, 8}. Ops: `attn_pre_proj` = fused QKV projection **including the QK-norm** (Qwen3 applies it inside this scope),
+this is a strict superset of the profiler's default 386-value grid, which the earlier run `runs/2026-09-15_1142_linear_op_grid386/linear_op.csv` used. TP ∈ {1, 2, 4, 8}. Ops: `attn_pre_proj` = fused QKV projection **including the QK-norm** (Qwen3 applies it inside this scope),
 `attn_post_proj` = output projection, `attn_rope`, `input_layernorm`, `post_attention_layernorm`, `emb`. Same
 `samples/warmup_count/count/…` scheme as attention (3 + 50 runs). **`emb`, `input_layernorm` and `post_attention_layernorm`
 are recorded on TP = 1 rows only and are NaN on TP > 1 rows by design** (replicated ops are split to TP 1 by the profiler).
@@ -121,6 +150,30 @@ are recorded on TP = 1 rows only and are NaN on TP > 1 rows by design** (replica
 (6 warm-up + 100 timed) — read `warmup_count` and `count` rather than assuming 53. There is no `time_stats.add.*`: the residual add
 is fused into RMSNorm for this model. Constant columns (`use_qk_norm True`, `n_expanded_embd 768`, `vocab_size 151936`, …) can
 be ignored.
+
+## 5b. Two-column timing (runs from 2026-09-17 on) — and why the root `linear_op.csv` is only partly usable
+
+The legacy CUDA-event loop enqueues 50 forwards with no synchronisation; whenever the GPU has drained everything queued before a scope,
+the event pair measures the **host's launch span**, not the kernel (root cause and validation: `profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/07_…md`,
+`08_…md`, `09_…md`). In the root `linear_op.csv` that inflates `attn_pre_proj`/`attn_rope`/`attn_post_proj` medians 1.2–7× below roughly
+5000–10000 tokens at TP 2/4/8 (and TP1 below ~2000–3000 tokens); above those bounds it agrees with kernel time within 1–3 %. The profiler
+now times every shape twice under `--profile_method cuda_event`:
+
+| Column | Meaning |
+|---|---|
+| `time_stats.<op>.*` | **GPU-bound pass**: a device spin is enqueued before the timed loop so the device runs behind the host; the event pair measures the scope's kernels plus one ≈3 µs dispatch gap per kernel boundary. Primary column. |
+| `time_stats_hostbound.<op>.*` | **legacy pass**, unchanged loop: host launch span wherever the device was idle at scope start. Kept for comparison. |
+| `time_stats.forward_gpu_span.*` | one event pair around each whole forward of the GPU-bound pass (closure check; see RUN.md "F6"). |
+| `host_wall_per_forward_ms`, `host_wall_per_forward_ms_backlog` | host wall of the 50-forward loop / 50 incl. the trailing sync, legacy and GPU-bound pass (the latter contains the spin drain). |
+| `gpu_backlog_ms`, `gpu_backlog_ms_actual` | requested and event-measured spin length (ms). |
+| `legacy_host_bound_ratio.<op>`, `legacy_host_bound.<op>` | legacy/GPU-bound median and the `> 1.15` flag: marks the **legacy** column as host-bound on that row (informational). |
+
+**The two columns also differ by clock state.** The GPU-bound pass runs after an 80–120 ms spin; the spin's own event-measured length shows
+the shader clock at ≈2.0 GHz when started from idle (1.93–2.08 M cycles/ms, 96 processes over three jobs) and ≈2.4 GHz once warm
+(2.38–2.40 M). A legacy/GPU-bound delta is therefore instrument change **plus** clock change; where the legacy loop was already GPU-bound
+the columns agree within 1–2 %, which bounds the clock share for ≥ 20 µs GEMMs, while for ≤ 20 µs kernels the traced no-knob/knob ratio is
+1.05–1.4. `attn_rope` is the numerically wrong torch fallback in both columns (RUN.md of the 2026-09-17 run). `sanity_check.py` requires the
+full two-column schema for new runs (`--allow-legacy-schema` for older or non-`cuda_event` files).
 
 ## 6. Reading recipes
 
@@ -164,5 +217,7 @@ parser is not round-trip exact).
 - Profiler: `frontier.profiling.attention.main` (4 GPU workers per cell) and `frontier.profiling.linear_op.main`; the exact command
   lines are in the Slurm logs under `logs/qwen3_mi355x/` on the collecting checkout and in `02_run_record.md`.
 - Cold-start behaviour was **not** measured: every shape is preceded by its own 3 warm-up runs inside an already-hot process.
-- Validation: `python profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/sanity_check.py <this dir>` re-checks schema, grid
-  coverage, row-hash equality of the canonical files, and prints the warm-up-position histograms. It passed on this data.
+- Validation: `python profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/sanity_check.py <this dir> --cells runs/2026-09-15_1142_attention_16k`
+  re-checks schema, grid coverage, row-hash equality of the canonical files against the per-block cells, and prints the
+  warm-up-position histograms. Run folders are checked the same way (`sanity_check.py runs/<run> [--max-seq-len 32768|65536]`;
+  attention or linear checks are skipped when that file is absent). PASS on the root, the 16k/32k/64k runs and both linear runs (2026-09-16).

@@ -69,6 +69,7 @@ case "$STAGE" in
       || { echo "cell block${AITER_BLOCK_SIZES} produced no collected CSV" >&2; exit 1; }
     ;;
   linear_op)
+    # LINEAR_CMD_PREFIX (e.g. "rocprofv3 --kernel-trace --output-format csv -d <dir> --") wraps the profiler; LINEAR_TPS overrides "1 2 4 8".
     # Token grid: dense by default (every count to 2048, every 8 to 8192, every 16 to 16384; 4000 excluded = known GPU fault),
     # 3,327 values; a strict superset of the profiler's 386-value grid. Override with LINEAR_TOKENS_PY (a python expression).
     TOKENS_PY="${LINEAR_TOKENS_PY:-sorted((set(range(1, 2049)) | set(range(2056, 8193, 8)) | set(range(8208, 16385, 16))) - set([4000]))}"  # no braces: they end the \${var:-} default early
@@ -78,8 +79,8 @@ case "$STAGE" in
       -v "$PWD":/workspace/frontier -w /workspace/frontier -e PYTHONPATH=/workspace/frontier \
       -e FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1 -e HSA_ENABLE_COREDUMP=0 -e CUDA_VISIBLE_DEVICES="$GPU_IDS" -e HIP_VISIBLE_DEVICES="$GPU_IDS" \
       ${LINEAR_DOCKER_ENV:-} \
-      "$IMAGE" python -m frontier.profiling.linear_op.main --disable_ray --yes --device mi355x --models "$MODEL" --is_moe \
-        --num_gpus "${LINEAR_NUM_GPUS:-8}" --num_tensor_parallel_workers 1 2 4 8 --precision BF16 --profile_method cuda_event \
+      "$IMAGE" ${LINEAR_CMD_PREFIX:-} python -m frontier.profiling.linear_op.main --disable_ray --yes --device mi355x --models "$MODEL" --is_moe \
+        --num_gpus "${LINEAR_NUM_GPUS:-8}" --num_tensor_parallel_workers ${LINEAR_TPS:-1 2 4 8} --precision BF16 --profile_method cuda_event \
         --max_tokens 16384 --num_tokens_list $TOKENS --output_dir "${COLLECT_DIR:-data/profiling}" \
       > "data/profiling/sweep_work/logs/linear_op${LINEAR_LOG_SUFFIX:-}.log" 2>&1
     ;;

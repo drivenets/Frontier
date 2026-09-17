@@ -1,5 +1,7 @@
 import gc
 import os
+import time
+from contextlib import nullcontext
 
 import torch
 
@@ -11,6 +13,7 @@ from frontier.profiling.common.utils import (
     configure_quantization_manager_for_model_name,
     initialize_dummy_weights,
 )
+from frontier.profiling.common.cuda_timer import CudaTimer
 from frontier.profiling.common.timer_stats_store import TimerStatsStore
 from frontier.profiling.linear_op.linear_op_impl import GPTModel
 from frontier.profiling.linear_op import spike_diag
@@ -24,6 +27,71 @@ from frontier.profiling.utils.record_function_tracer import RecordFunctionTracer
 
 WARMUP_STEPS = 3
 ACTIVE_STEPS = int(os.environ.get("FRONTIER_LINEAR_ACTIVE_STEPS", "50"))  # override only for the spike experiments
+
+# Two-column op timing (profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/07_post_proj_rope_dip_root_cause.md, validated in 08_).
+# A CUDA-event scope in the un-synchronised 50-forward loop measures the host's launch span, not the kernel, whenever the
+# GPU has drained everything queued before the scope (host ~0.45-0.68 ms/forward vs GPU 0.07-0.47 ms at TP>1 below ~6k tokens).
+# Every shape is therefore timed twice: the legacy pass as before (-> time_stats_hostbound) and a GPU-bound pass in which a
+# GPU spin is enqueued right before the timed loop so the device runs behind the host for the whole loop (-> time_stats).
+# FRONTIER_GPU_BACKLOG_MS=<ms> overrides the spin length (default: BACKLOG_REQUEST_FACTOR x the legacy pass's loop wall).
+_GPU_BACKLOG_MS = float(os.environ.get("FRONTIER_GPU_BACKLOG_MS", "0") or 0)
+BACKLOG_REQUEST_FACTOR = 4.0   # requested spin = 4x the legacy loop wall: margin over the 3x gate for a cold or drifting clock
+BACKLOG_COVERAGE_FACTOR = 3.0  # the delivered (event-measured) spin must cover 3x the legacy loop wall (sanity gate, test_backlog_covers_host_time)
+LEGACY_HOST_BOUND_RATIO_THRESHOLD = 1.15  # legacy/GPU-bound: 0.98-1.01 where the idle gap before the kernel is <= 6 us, >= 1.60 where >= 40 us
+FORWARD_SPAN_SCOPE = "forward_gpu_span"   # one event pair around each whole forward of the GPU-bound pass (F6 closure column)
+_SLEEP_CYCLES_PER_MS = None
+
+
+def _empty_two_pass_fields() -> dict:
+    """Fresh (unshared) values for profile methods without a second pass (record_function; kineto/perf_counter)."""
+    return {
+        "time_stats_hostbound": {}, "host_wall_per_forward_ms": float("nan"), "host_wall_per_forward_ms_backlog": float("nan"),
+        "gpu_backlog_ms": float("nan"), "gpu_backlog_ms_actual": float("nan"), "legacy_host_bound_ratio": {}, "legacy_host_bound": {},
+    }
+
+
+def _enqueue_gpu_backlog(ms: float) -> "tuple[torch.cuda.Event, torch.cuda.Event, int]":
+    """Enqueue a GPU spin of ~`ms` on the current stream (caller has synchronised, so the device is idle).
+
+    Returns (start_event, end_event, cycles); the caller reads start.elapsed_time(end) after its trailing synchronize
+    and re-fits _SLEEP_CYCLES_PER_MS from it. torch.cuda._sleep counts device cycles, so the delivered length depends on
+    the clock: a cold 20M-cycle calibration under-delivered the first 80 ms spin by 13-23 % (jobs 21376/21385). The
+    calibration therefore spins twice and fits from the second (warmer-clock) spin, and every later spin re-fits it.
+    """
+    global _SLEEP_CYCLES_PER_MS
+    if _SLEEP_CYCLES_PER_MS is None:
+        torch.cuda.synchronize()
+        for _ in range(2):  # first spin ramps the clock, second is the one we fit
+            start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+            start.record()
+            torch.cuda._sleep(20_000_000)
+            end.record()
+            torch.cuda.synchronize()
+        _SLEEP_CYCLES_PER_MS = 20_000_000 / start.elapsed_time(end)
+        print(f"[gpu_backlog] pid={os.getpid()} cycles_per_ms={_SLEEP_CYCLES_PER_MS:.0f}", flush=True)
+    cycles = int(ms * _SLEEP_CYCLES_PER_MS)
+    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    start.record()  # the GPU is idle here (caller synchronised), so this stamps at enqueue time
+    torch.cuda._sleep(cycles)
+    end.record()    # stamps when the spin finishes; read after the caller's trailing synchronize
+    return start, end, cycles
+
+
+def compute_legacy_host_bound(time_stats_hostbound, time_stats, threshold=LEGACY_HOST_BOUND_RATIO_THRESHOLD):
+    """Per-op legacy/GPU-bound median ratio and the > threshold flag, for ops present in both passes.
+
+    Marks the LEGACY column as host-bound; informational (the sanity gates are on the GPU-bound column). 0/0 -> 1.0.
+    """
+    ratio, flag = {}, {}
+    for op, legacy in time_stats_hostbound.items():
+        gpu_bound = time_stats.get(op)
+        if gpu_bound is None:
+            continue
+        num, den = float(legacy["median"]), float(gpu_bound["median"])
+        r = 1.0 if num == den == 0.0 else (float("inf") if den == 0.0 else num / den)
+        ratio[op] = r
+        flag[op] = bool(r > threshold)
+    return ratio, flag
 
 
 class LinearOpWrapper:
@@ -113,6 +181,65 @@ class LinearOpWrapper:
             expected_keys.extend(_share_expert_profiling_names())
         return expected_keys
 
+    def _timed_pass(self, input_ids, positions, *, backlog_ms: float, record_forward_span: bool):
+        """3 warm-up + ACTIVE_STEPS timed forwards; returns time_stats, loop_wall_ms and the measured spin.
+
+        Order (unchanged from the single-pass loop except for the optional spin): warm-up -> synchronize ->
+        mark_warmup_end -> [spin enqueued on the stream] -> timed forwards -> synchronize. The spin therefore precedes
+        every timed start event and is never inside a scope. TimerStatsStore arithmetic is untouched: get_stats() takes
+        the median over the same 50 timed runs.
+        """
+        global _SLEEP_CYCLES_PER_MS
+        self.timer_stats_store.clear_stats()
+        diag = spike_diag.enabled
+        span_timer = CudaTimer(FORWARD_SPAN_SCOPE) if record_forward_span else nullcontext()
+        backlog_events = None
+        # Keep CPython's cyclic GC out of the timed region: a gen-2 collection on this thread lands between a
+        # CudaTimer start event and the kernel launch and shows up as a 150-290 ms sample
+        # (profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/05_linear_op_spike_root_cause.md).
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+        try:
+            for _ in range(WARMUP_STEPS):
+                if diag:
+                    spike_diag.forward_begin()
+                with span_timer:
+                    self.model(input_ids, positions)
+                if diag:
+                    spike_diag.forward_end()
+
+            torch.cuda.synchronize()
+            self.timer_stats_store.mark_warmup_end()
+            if backlog_ms > 0:
+                backlog_events = _enqueue_gpu_backlog(backlog_ms)
+            loop_t0 = time.perf_counter()
+
+            for _ in range(ACTIVE_STEPS):
+                if diag:
+                    spike_diag.forward_begin()
+                with span_timer:
+                    self.model(input_ids, positions)
+                if diag:
+                    spike_diag.forward_end()
+
+            torch.cuda.synchronize()
+            loop_wall_ms = (time.perf_counter() - loop_t0) * 1e3
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+
+        backlog_actual_ms = 0.0
+        if backlog_events is not None:
+            start, end, cycles = backlog_events
+            backlog_actual_ms = float(start.elapsed_time(end))
+            if backlog_actual_ms > 0:
+                _SLEEP_CYCLES_PER_MS = cycles / backlog_actual_ms  # re-fit for the next task (clock drifts, see helper)
+        return {
+            "time_stats": self.timer_stats_store.get_stats(),
+            "loop_wall_ms": loop_wall_ms,
+            "backlog_actual_ms": backlog_actual_ms,
+        }
+
     @torch.inference_mode()  # disable gradient calculation
     def profile(self, num_tokens: int):
         vocab_range = self.padded_vocab_size // self.num_tensor_parallel_workers
@@ -159,49 +286,35 @@ class LinearOpWrapper:
             missing_keys = [k for k in expected_keys if k not in time_stats]
             if missing_keys:
                 print(f"[WARNING] num_tokens={num_tokens}: Missing operations: {missing_keys}")
+            two_pass_fields = _empty_two_pass_fields()
         else:
-            self.timer_stats_store.clear_stats()
-
-            diag = spike_diag.enabled
-            # Keep CPython's cyclic GC out of the timed region: a gen-2 collection on this thread lands between a
-            # CudaTimer start event and the kernel launch and shows up as a 150-290 ms sample
-            # (profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/05_linear_op_spike_root_cause.md).
-            gc_was_enabled = gc.isenabled()
-            gc.disable()
-            try:
-                for _ in range(WARMUP_STEPS):
-                    if diag:
-                        spike_diag.forward_begin()
-                    self.model(
-                        input_ids,
-                        positions,
-                    )
-                    if diag:
-                        spike_diag.forward_end()
-
-                torch.cuda.synchronize()
-                self.timer_stats_store.mark_warmup_end()
-
-                for _ in range(ACTIVE_STEPS):
-                    if diag:
-                        spike_diag.forward_begin()
-                    self.model(
-                        input_ids,
-                        positions,
-                    )
-                    if diag:
-                        spike_diag.forward_end()
-
-                torch.cuda.synchronize()
-            finally:
-                if gc_was_enabled:
-                    gc.enable()
-
-            time_stats = self.timer_stats_store.get_stats()
-
+            # Pass 1 (legacy): the loop exactly as before -> host-bound for short ops.
+            legacy = self._timed_pass(input_ids, positions, backlog_ms=0.0, record_forward_span=False)
+            time_stats = legacy["time_stats"]
+            two_pass_fields = {**_empty_two_pass_fields(), "host_wall_per_forward_ms": legacy["loop_wall_ms"] / ACTIVE_STEPS}
+            if self.profile_method == ProfileMethod.CUDA_EVENT.value:
+                # Pass 2 (GPU-bound, CUDA_EVENT only - the other methods synchronise per scope): same loop with the device
+                # held behind the host by a spin enqueued before the timed forwards, so every event pair can only measure
+                # device time. This becomes the primary column (time_stats); the legacy pass is kept as time_stats_hostbound.
+                requested_backlog_ms = _GPU_BACKLOG_MS if _GPU_BACKLOG_MS > 0 else BACKLOG_REQUEST_FACTOR * legacy["loop_wall_ms"]
+                gpu_bound = self._timed_pass(input_ids, positions, backlog_ms=requested_backlog_ms, record_forward_span=True)
+                time_stats = gpu_bound["time_stats"]
+                legacy_ratio, legacy_flag = compute_legacy_host_bound(legacy["time_stats"], time_stats)
+                two_pass_fields.update({
+                    "time_stats_hostbound": legacy["time_stats"],
+                    "host_wall_per_forward_ms_backlog": gpu_bound["loop_wall_ms"] / ACTIVE_STEPS,
+                    "gpu_backlog_ms": requested_backlog_ms,
+                    "gpu_backlog_ms_actual": gpu_bound["backlog_actual_ms"],
+                    "legacy_host_bound_ratio": legacy_ratio,
+                    "legacy_host_bound": legacy_flag,
+                })
 
         stats = {
             "time_stats": time_stats,
+            # two-column timing fields (CUDA_EVENT): time_stats_hostbound = legacy pass; host_wall_per_forward_ms = legacy
+            # loop wall / 50 incl. the trailing sync ("W"); *_backlog = GPU-bound pass (contains the spin drain);
+            # gpu_backlog_ms = requested spin, gpu_backlog_ms_actual = event-measured spin; legacy_host_bound[_ratio] per op.
+            **two_pass_fields,
             "n_head": self.model_config.num_q_heads,
             "n_kv_head": self.model_config.num_kv_heads,
             "n_embd": self.model_config.embedding_dim,

@@ -763,14 +763,21 @@ def profile_model(
             f"Available columns: {list(df.columns)}. "
             "This may indicate a profiling wrapper issue."
         )
-    # the time_stats column is a dict, so we need to expand it into columns recursively and add prefix
-    df = (
-        pd.json_normalize(df["time_stats"])
-        .add_prefix("time_stats.")
-        .join(df.drop(columns=["time_stats"]))
-    )
+    return expand_dict_columns(df)
 
-    return df
+
+def expand_dict_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Expand every dict-valued column (time_stats, time_stats_hostbound, legacy_host_bound_ratio, ...) into
+    '<column>.<key>[.<subkey>]' columns, keeping the scalar columns."""
+    dict_cols = [c for c in df.columns if df[c].map(lambda v: isinstance(v, dict)).any()]
+    out = df.drop(columns=dict_cols)
+    for col in dict_cols:
+        expanded = pd.json_normalize(df[col].map(lambda v: v if isinstance(v, dict) else {}).tolist()).add_prefix(f"{col}.")
+        expanded.index = df.index
+        out = out.join(expanded)
+    # keep the historical column order: time_stats.* first, then the rest
+    lead = [c for c in out.columns if c.startswith("time_stats.")]
+    return out[lead + [c for c in out.columns if c not in lead]]
 
 
 def filter_mlp_columns(df):

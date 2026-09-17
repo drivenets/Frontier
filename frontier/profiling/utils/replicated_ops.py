@@ -3,6 +3,10 @@
 from typing import Dict, List, Optional, Set, Tuple
 
 
+# Result-dict fields keyed by op name (split by split_replicated_result, flattened with their own prefix by main.py).
+PER_OP_DICT_FIELDS = ("time_stats", "time_stats_hostbound", "legacy_host_bound_ratio", "legacy_host_bound")
+
+
 def split_replicated_result(
     result: Dict,
     replicated_op_names: Set[str],
@@ -24,14 +28,16 @@ def split_replicated_result(
     Returns:
         (sharded_row, replicated_row) — both are new dicts (shallow copy).
     """
-    time_stats = result["time_stats"]
-
-    replicated_stats = {k: v for k, v in time_stats.items() if k in replicated_op_names}
-    sharded_stats = {k: v for k, v in time_stats.items() if k not in replicated_op_names}
-
-    sharded_row = {**result, "time_stats": sharded_stats}
-
-    replicated_row = {**result, "time_stats": replicated_stats}
+    # Every per-op dict field is split the same way as time_stats, so the two-column timing fields
+    # (time_stats_hostbound, legacy_host_bound_ratio, legacy_host_bound) stay consistent per row.
+    sharded_row = {**result}
+    replicated_row = {**result}
+    for field in PER_OP_DICT_FIELDS:
+        per_op = result.get(field)
+        if not isinstance(per_op, dict):
+            continue
+        replicated_row[field] = {k: v for k, v in per_op.items() if k in replicated_op_names}
+        sharded_row[field] = {k: v for k, v in per_op.items() if k not in replicated_op_names}
     replicated_row["num_tensor_parallel_workers"] = 1
     if unpadded_n_embd is not None:
         replicated_row["padded_n_embd"] = unpadded_n_embd

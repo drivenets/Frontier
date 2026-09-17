@@ -55,11 +55,29 @@ def _write_dataset(root: Path) -> None:
     for name in ("attention", "attention_true_mixed", "attention_combined"):  # exactly the plan's Step 4 union
         pd.concat([pd.read_csv(root / f"{name}_aiter_block{b}.csv", low_memory=False, float_precision="round_trip") for b in (1, 16)]).to_csv(root / f"{name}.csv", index=False)
     tokens = [t for t in get_num_tokens_to_profile(16384) if t != 4000]
-    pd.DataFrame([{"n_head": 32, "n_kv_head": 4, "n_embd": 2048, "use_qk_norm": True, "num_tokens": t,
-                   "num_tensor_parallel_workers": tp, "warmup_steps": 3, "active_steps": 50,
-                   "time_stats.attn_pre_proj.median": t / 1000, "time_stats.attn_post_proj.median": t / 2000,
-                   "time_stats.emb.median": 0.1 if tp == 1 else float("nan")}
-                  for tp in (1, 2, 4, 8) for t in tokens]).to_csv(root / "linear_op.csv", index=False)
+    pd.DataFrame([_linear_row(t, tp) for tp in (1, 2, 4, 8) for t in tokens]).to_csv(root / "linear_op.csv", index=False)
+
+
+def _linear_row(t: int, tp: int) -> dict:
+    """One linear_op row in the two-column timing schema (GPU-bound time_stats.* + legacy time_stats_hostbound.*);
+    _legacy_schema() strips it down to the pre-2026-09-17 single-column layout."""
+    row = {"n_head": 32, "n_kv_head": 4, "n_embd": 2048, "use_qk_norm": True, "num_tokens": t,
+           "num_tensor_parallel_workers": tp, "warmup_steps": 3, "active_steps": 50,
+           "time_stats.attn_pre_proj.median": t / 1000, "time_stats.attn_post_proj.median": t / 2000,
+           "time_stats.emb.median": 0.1 if tp == 1 else float("nan")}
+    row.update({"time_stats_hostbound.attn_pre_proj.median": t / 1000 * 1.5, "time_stats_hostbound.attn_post_proj.median": t / 2000 * 2.0,
+                "time_stats_hostbound.attn_rope.median": 0.06, "time_stats.attn_rope.median": 0.05,
+                **{f"time_stats_hostbound.{op}.count": 50 for op in ("attn_pre_proj", "attn_rope", "attn_post_proj")},
+                "time_stats.forward_gpu_span.median": 0.5, "time_stats.forward_gpu_span.count": 50,
+                "host_wall_per_forward_ms": 0.6, "host_wall_per_forward_ms_backlog": 3.0, "gpu_backlog_ms": 4.0 * 50 * 0.6,
+                "gpu_backlog_ms_actual": 4.0 * 50 * 0.6,  # coverage 4x >= the 3x gate
+                "legacy_host_bound_ratio.attn_pre_proj": 1.5, "legacy_host_bound.attn_pre_proj": True,
+                "legacy_host_bound_ratio.attn_rope": 1.2, "legacy_host_bound.attn_rope": True,
+                "legacy_host_bound_ratio.attn_post_proj": 2.0, "legacy_host_bound.attn_post_proj": True,
+                # replicated op: recorded on TP=1 rows only, NaN elsewhere (must not be counted as a flag)
+                "time_stats_hostbound.emb.median": 0.15 if tp == 1 else float("nan"),
+                "legacy_host_bound_ratio.emb": 1.5 if tp == 1 else float("nan"), "legacy_host_bound.emb": True if tp == 1 else float("nan")})
+    return row
 
 
 @pytest.fixture(scope="module")
@@ -76,8 +94,8 @@ def dataset(base_dataset: Path, tmp_path: Path) -> Path:
     return root
 
 
-def _run(root: Path) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(SCRIPT), str(root)], capture_output=True, text=True, cwd=REPO_ROOT)
+def _run(root: Path, *extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(SCRIPT), str(root), *extra], capture_output=True, text=True, cwd=REPO_ROOT)
 
 
 def _rewrite(root: Path, names, mutate) -> None:
@@ -120,6 +138,87 @@ def test_passes_on_generator_built_dataset(dataset: Path) -> None:
     assert result.stdout.rstrip().endswith("PASS")
     assert "block16 TP8: 2772/2772 standard rows, 0 memory-filtered" in result.stdout
     assert "block16 TP8: 360/360 true-mixed rows, 0 memory-filtered" in result.stdout
+    # 386 TP=1 rows carry the replicated emb flag; the 1158 NaN rows at TP>1 must not be counted
+    assert "linear_op: two-column schema; legacy column host-bound (ratio > 1.15) on rows per op: {'attn_pre_proj': 1544, 'attn_rope': 1544, 'attn_post_proj': 1544, 'emb': 386}" in result.stdout
+
+
+def _legacy_schema(df):
+    return df.drop(columns=[c for c in df.columns if c.startswith(("time_stats_hostbound.", "legacy_host_bound", "time_stats.forward_gpu_span."))
+                            or c in ("host_wall_per_forward_ms", "host_wall_per_forward_ms_backlog", "gpu_backlog_ms", "gpu_backlog_ms_actual")])
+
+
+@pytest.mark.parametrize(
+    "drop, first_missing",
+    [
+        (["time_stats.forward_gpu_span.median", "time_stats.forward_gpu_span.count"], "time_stats.forward_gpu_span.count"),
+        (["host_wall_per_forward_ms_backlog"], "host_wall_per_forward_ms_backlog"),
+        (["gpu_backlog_ms"], "gpu_backlog_ms"),
+        (["legacy_host_bound.attn_pre_proj", "legacy_host_bound_ratio.attn_pre_proj"], "legacy_host_bound.attn_pre_proj"),
+        (["time_stats_hostbound.attn_pre_proj.median"], "time_stats_hostbound.attn_pre_proj.median"),
+    ],
+    ids=["forward-span", "backlog-host-wall", "requested-backlog", "pre-proj-flags", "pre-proj-hostbound-median"],
+)
+def test_partial_two_column_schema_is_rejected_before_gates(dataset: Path, drop, first_missing: str) -> None:
+    # any two-column field present makes the FULL set mandatory; a partial schema must fail loudly, not let the gates skip
+    _rewrite(dataset, ("linear_op",), lambda df: df.drop(columns=drop))
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert "FAIL: linear_op: two-column timing schema incomplete - missing" in result.stdout, result.stdout + result.stderr
+    assert f"gates not run: ['{first_missing}'" in result.stdout, result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def test_legacy_single_column_schema_is_rejected_unless_allowed(dataset: Path) -> None:
+    # the pre-2026-09-17 linear_op.csv layout (only time_stats.*) is host-bound below ~5k tokens at TP>1 and must be opted into
+    _rewrite(dataset, ("linear_op",), _legacy_schema)
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert "FAIL: linear_op: single-column (legacy) timing schema" in result.stdout, result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
+    result = _run(dataset, "--allow-legacy-schema")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "linear_op: legacy single-column schema accepted (--allow-legacy-schema)" in result.stdout
+
+
+def test_non_cuda_event_run_with_nan_backlog_scalars_is_legacy_schema(dataset: Path) -> None:
+    # kineto/perf_counter/record_function runs of the new wrapper keep the four backlog/host-wall scalars as all-NaN columns
+    # and have no dict-derived columns; they must be treated as legacy schema, not as an incomplete two-column run
+    def nan_scalars(df):
+        df = df.drop(columns=[c for c in df.columns if c.startswith(("time_stats_hostbound.", "legacy_host_bound", "time_stats.forward_gpu_span."))])
+        return df.assign(**{c: float("nan") for c in ("host_wall_per_forward_ms", "host_wall_per_forward_ms_backlog", "gpu_backlog_ms", "gpu_backlog_ms_actual")})
+    _rewrite(dataset, ("linear_op",), nan_scalars)
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert "FAIL: linear_op: single-column (legacy) timing schema" in result.stdout, result.stdout + result.stderr
+    assert "two-column timing schema incomplete" not in result.stdout
+    result = _run(dataset, "--allow-legacy-schema")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tokens_grid_override_accepts_a_validation_grid(dataset: Path) -> None:
+    grid = [1, 8, 64, 3072, 4096, 4192, 6144, 8192]
+    _rewrite(dataset, ("linear_op",), lambda df: pd.DataFrame([_linear_row(t, tp) for tp in (1, 2, 4, 8) for t in grid]))
+    assert _run(dataset).returncode != 0  # the default 386-value grid is required
+    result = _run(dataset, "--tokens-grid", str(grid))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "linear_op: 8 token values x 4 TP = 32 rows" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "mutate, expected_fail",
+    [
+        (lambda df: df.assign(gpu_backlog_ms_actual=2.0 * 50 * 0.6), "FAIL: linear_op: GPU backlog covers < 3.0x the legacy loop on 1544 rows (min ratio 2.00)"),
+        (lambda df: df.assign(**{"time_stats.attn_post_proj.median": df["time_stats_hostbound.attn_post_proj.median"] * 1.10}),
+         "FAIL: linear_op: GPU-bound attn_post_proj exceeds 1.05x legacy on 1544 rows (max 1.100)"),
+    ],
+    ids=["backlog-coverage", "gpu-bound-above-legacy"],
+)
+def test_two_column_hard_gates_report_exact_line(dataset: Path, mutate, expected_fail: str) -> None:
+    _rewrite(dataset, ("linear_op",), mutate)
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert expected_fail in result.stdout, result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize(
