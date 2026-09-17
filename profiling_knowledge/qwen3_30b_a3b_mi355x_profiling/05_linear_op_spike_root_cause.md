@@ -255,3 +255,20 @@ The 32 affected samples are host artefacts and should be excluded from any max/t
 unaffected. If future sweeps should be free of it, calling `gc.freeze()` once after the first task's imports, or
 `gc.disable()` for the timed loop (cyclic garbage is 133 objects per 416 tasks), removes it; both are one-line,
 worker-init changes and were exercised here (E2b, E5).
+
+## 7. Fix plan and acceptance criteria (not yet executed)
+
+Fix: in `LinearOpWrapper.profile` (cuda_event branch, `linear_op_wrapper.py`) call `gc.disable()` immediately before the
+warm-up loop and `gc.enable()` in a `finally` after the final `torch.cuda.synchronize()`; no `gc.collect()` anywhere in
+the per-task path. The pending full collection then fires at the first allocation outside the timed region.
+
+Acceptance, on a full-grid re-run (13,308 rows), against `runs/2026-09-16_0629_linear_op_dense3327_rerun/linear_op.csv`:
+
+1. no `attn_pre_proj` timed sample above 5 ms anywhere (was 144–290 ms in 32 rows);
+2. rows with max timed sample >20× row median: only the sporadic ≤2.5 ms class remains (report count and max);
+3. per-op median ratio new/old: p5–p95 within 0.90–1.10, p50 within 0.98–1.02;
+4. GC fingerprint gone: median over rows of sample_k / row-median < 1.10 for k = 11 and k = 33 (was 1.31 / 1.05);
+5. in a second run with `FRONTIER_SPIKE_DIAG` set, every recorded gen-2 collection starts outside every `forwards_ms`
+   window (between tasks or before the warm-up loop).
+
+Commit only if 1–5 pass; write a `RUN.md` for the new run folder as for the existing runs.
