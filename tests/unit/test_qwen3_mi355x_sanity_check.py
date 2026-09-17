@@ -70,6 +70,8 @@ def _linear_row(t: int, tp: int) -> dict:
                 **{f"time_stats_hostbound.{op}.count": 50 for op in ("attn_pre_proj", "attn_rope", "attn_post_proj")},
                 "time_stats.forward_gpu_span.median": 0.5, "time_stats.forward_gpu_span.count": 50,
                 "host_wall_per_forward_ms": 0.6, "host_wall_per_forward_ms_backlog": 3.0, "gpu_backlog_ms": 4.0 * 50 * 0.6,
+                "host_enqueue_per_forward_ms": 0.55, "host_enqueue_per_forward_ms_backlog": 0.55,
+                "sclk_mhz_legacy_start": 2000.0, "sclk_mhz_legacy_end": 2100.0, "sclk_mhz_backlog_start": 2400.0, "sclk_mhz_backlog_end": 2400.0,
                 "gpu_backlog_ms_actual": 4.0 * 50 * 0.6,  # coverage 4x >= the 3x gate
                 "legacy_host_bound_ratio.attn_pre_proj": 1.5, "legacy_host_bound.attn_pre_proj": True,
                 "legacy_host_bound_ratio.attn_rope": 1.2, "legacy_host_bound.attn_rope": True,
@@ -143,7 +145,7 @@ def test_passes_on_generator_built_dataset(dataset: Path) -> None:
 
 
 def _legacy_schema(df):
-    return df.drop(columns=[c for c in df.columns if c.startswith(("time_stats_hostbound.", "legacy_host_bound", "time_stats.forward_gpu_span."))
+    return df.drop(columns=[c for c in df.columns if c.startswith(("time_stats_hostbound.", "legacy_host_bound", "time_stats.forward_gpu_span.", "sclk_mhz_", "host_enqueue_per_forward_ms"))
                             or c in ("host_wall_per_forward_ms", "host_wall_per_forward_ms_backlog", "gpu_backlog_ms", "gpu_backlog_ms_actual")])
 
 
@@ -184,8 +186,11 @@ def test_non_cuda_event_run_with_nan_backlog_scalars_is_legacy_schema(dataset: P
     # kineto/perf_counter/record_function runs of the new wrapper keep the four backlog/host-wall scalars as all-NaN columns
     # and have no dict-derived columns; they must be treated as legacy schema, not as an incomplete two-column run
     def nan_scalars(df):
+        # exactly what LinearOpWrapper.profile() emits for kineto/perf_counter: the legacy pass ran (host_wall, host_enqueue and the two
+        # legacy sclk probes are real numbers), the GPU-bound pass did not (its scalars are NaN, its dict fields expand to nothing)
         df = df.drop(columns=[c for c in df.columns if c.startswith(("time_stats_hostbound.", "legacy_host_bound", "time_stats.forward_gpu_span."))])
-        return df.assign(**{c: float("nan") for c in ("host_wall_per_forward_ms", "host_wall_per_forward_ms_backlog", "gpu_backlog_ms", "gpu_backlog_ms_actual")})
+        return df.assign(**{c: float("nan") for c in ("host_wall_per_forward_ms_backlog", "gpu_backlog_ms", "gpu_backlog_ms_actual",
+                                                      "host_enqueue_per_forward_ms_backlog", "sclk_mhz_backlog_start", "sclk_mhz_backlog_end")})
     _rewrite(dataset, ("linear_op",), nan_scalars)
     result = _run(dataset)
     assert result.returncode != 0
@@ -193,6 +198,52 @@ def test_non_cuda_event_run_with_nan_backlog_scalars_is_legacy_schema(dataset: P
     assert "two-column timing schema incomplete" not in result.stdout
     result = _run(dataset, "--allow-legacy-schema")
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_option_in_place_of_dataset_path_is_rejected(dataset: Path) -> None:
+    # regression: `sanity_check.py --data-dir <dir>` once took "--data-dir" as the dataset path, found no CSVs and printed PASS
+    result = subprocess.run([sys.executable, str(SCRIPT), "--data-dir", str(dataset)], capture_output=True, text=True, cwd=REPO_ROOT)
+    assert result.returncode != 0
+    assert "usage: sanity_check.py <dataset-dir>" in result.stderr + result.stdout
+    assert "PASS" not in result.stdout
+
+
+def test_missing_dataset_dir_fails(tmp_path: Path) -> None:
+    result = _run(tmp_path / "does_not_exist")
+    assert result.returncode != 0
+    assert "dataset dir does not exist" in result.stderr + result.stdout
+
+
+def test_empty_dataset_dir_fails_instead_of_vacuous_pass(tmp_path: Path) -> None:
+    result = _run(tmp_path)
+    assert result.returncode != 0, result.stdout
+    assert "nothing checked" in result.stdout
+
+
+def test_nan_probe_value_is_rejected(dataset: Path) -> None:
+    def poison(df):
+        df = df.copy(); df.loc[df.index[3], "sclk_mhz_backlog_start"] = float("nan"); return df
+    _rewrite(dataset, ("linear_op",), poison)
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert "FAIL: linear_op: clock-probe/enqueue columns with non-finite values (rows per column): {'sclk_mhz_backlog_start': 1}" in result.stdout, result.stdout
+
+
+def test_pre_probe_two_column_run_passes_with_a_note(dataset: Path) -> None:
+    # the tracked 2026-09-17 08:46 run has the two timing columns but predates the clock probe: it must still pass, with a note
+    probe_cols = ["sclk_mhz_legacy_start", "sclk_mhz_legacy_end", "sclk_mhz_backlog_start", "sclk_mhz_backlog_end",
+                  "host_enqueue_per_forward_ms", "host_enqueue_per_forward_ms_backlog"]
+    _rewrite(dataset, ("linear_op",), lambda df: df.drop(columns=probe_cols))
+    result = _run(dataset)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "two-column run WITHOUT the clock probe" in result.stdout
+
+
+def test_partial_probe_group_is_rejected(dataset: Path) -> None:
+    _rewrite(dataset, ("linear_op",), lambda df: df.drop(columns=["sclk_mhz_backlog_end", "host_enqueue_per_forward_ms_backlog"]))
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert "FAIL: linear_op: clock-probe columns incomplete - missing ['host_enqueue_per_forward_ms_backlog', 'sclk_mhz_backlog_end']" in result.stdout, result.stdout
 
 
 def test_tokens_grid_override_accepts_a_validation_grid(dataset: Path) -> None:

@@ -14,7 +14,11 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # run by path without an editable install
 from frontier.profiling.utils import get_attention_input_combinations, get_num_tokens_to_profile, get_true_mixed_attention_input_combinations
 
+if len(sys.argv) < 2 or sys.argv[1].startswith("-"):  # the dataset path is positional; an option in its place once produced a vacuous PASS
+    sys.exit(f"usage: sanity_check.py <dataset-dir> [--max-seq-len N] [--cells DIR] [--tokens-grid '[..]'] [--allow-legacy-schema]; got {sys.argv[1:]}")
 d = Path(sys.argv[1]); fails, notes = [], []
+if not d.is_dir():
+    sys.exit(f"FAIL: dataset dir does not exist: {d}")
 MSL = int(sys.argv[sys.argv.index("--max-seq-len") + 1]) if "--max-seq-len" in sys.argv else 16384
 cells = Path(sys.argv[sys.argv.index("--cells") + 1]) if "--cells" in sys.argv else d  # per-block cell files may sit in a run folder
 TOKENS_GRID = set(ast.literal_eval(sys.argv[sys.argv.index("--tokens-grid") + 1])) if "--tokens-grid" in sys.argv else None  # a literal list, e.g. "[1,8,64]"
@@ -30,6 +34,12 @@ TWO_COLUMN_REQUIRED = {"time_stats.forward_gpu_span.median", "time_stats.forward
                        *(f"time_stats_hostbound.{op}.median" for op in ATTN_OPS), *(f"time_stats_hostbound.{op}.count" for op in ATTN_OPS),
                        *(f"legacy_host_bound_ratio.{op}" for op in ATTN_OPS), *(f"legacy_host_bound.{op}" for op in ATTN_OPS)}
 TWO_COLUMN_SIGNATURE = ("time_stats_hostbound.", "legacy_host_bound", "gpu_backlog_ms", "host_wall_per_forward_ms_backlog", "time_stats.forward_gpu_span.")
+# Second all-or-nothing group (runs from 2026-09-17 10:16 on): concurrent shader-clock estimate (MHz) immediately before/after each timed
+# loop and the host enqueue time per pass. Required only when any of them is present, so the pre-probe two-column run
+# (runs/2026-09-17_0846_...) stays checkable; its absence is reported in the notes. Non-cuda_event runs emit only the legacy pair as
+# numbers (backlog ones NaN) and are legacy-schema files, which is why only *_backlog names may act as signatures.
+PROBE_REQUIRED = {"sclk_mhz_legacy_start", "sclk_mhz_legacy_end", "sclk_mhz_backlog_start", "sclk_mhz_backlog_end",
+                  "host_enqueue_per_forward_ms", "host_enqueue_per_forward_ms_backlog"}
 ok = lambda cond, msg: None if cond else fails.append(msg)
 def same_rows(a, b):  # same multiset of rows, order-insensitive, NaN-safe
     if len(a) != len(b) or set(a.columns) != set(b.columns): return False
@@ -156,10 +166,23 @@ if (d / "linear_op.csv").exists():
                 ok((r <= GPU_BOUND_MAX_OVER_LEGACY).all(), f"linear_op: GPU-bound {op} exceeds {GPU_BOUND_MAX_OVER_LEGACY}x legacy on {int((r > GPU_BOUND_MAX_OVER_LEGACY).sum())} rows (max {r.max():.3f})")
         flags = {c.split(".", 1)[1]: int(lin[c].eq(True).sum()) for c in lin.columns if c.startswith("legacy_host_bound.")}  # NaN (replicated ops at TP>1) is not a flag
         notes.append(f"linear_op: two-column schema; legacy column host-bound (ratio > 1.15) on rows per op: {flags} (informational, not a failure)")
+        probe_present = PROBE_REQUIRED & set(lin.columns)
+        if probe_present:
+            missing_probe = sorted(PROBE_REQUIRED - set(lin.columns))
+            ok(not missing_probe, f"linear_op: clock-probe columns incomplete - missing {missing_probe}")
+            if not missing_probe:
+                bad = {c: int((~np.isfinite(lin[c].astype(float))).sum()) for c in sorted(PROBE_REQUIRED) if not np.isfinite(lin[c].astype(float)).all()}
+                ok(not bad, f"linear_op: clock-probe/enqueue columns with non-finite values (rows per column): {bad}")
+                clk = {c: (float(lin[c].median()), float(lin[c].min()), float(lin[c].max())) for c in sorted(PROBE_REQUIRED) if c.startswith("sclk_mhz_")}
+                notes.append("linear_op: concurrent SCLK estimate (MHz) median [min-max]: " + ", ".join(f"{k.replace('sclk_mhz_', '')}={v[0]:.0f} [{v[1]:.0f}-{v[2]:.0f}]" for k, v in clk.items()))
+        else:
+            notes.append("linear_op: two-column run WITHOUT the clock probe (pre-2026-09-17 10:16); clock state of the two passes unknown")
     else:
         ok(ALLOW_LEGACY, "linear_op: single-column (legacy) timing schema - cuda_event runs before 2026-09-17 are host-bound below ~5k tokens at TP>1 (07_ §3.6); kineto/perf_counter/record_function runs have no second pass by design; pass --allow-legacy-schema to accept")
         if ALLOW_LEGACY: notes.append("linear_op: legacy single-column schema accepted (--allow-legacy-schema)")
 else:
     notes.append("no linear_op.csv: linear checks skipped")
 
+if not (d / "attention.csv").exists() and not (d / "linear_op.csv").exists():
+    fails.append(f"nothing checked - neither attention.csv nor linear_op.csv in {d}")
 print("\n".join(notes)); print("\n".join("FAIL: " + f for f in fails) or "PASS"); sys.exit(1 if fails else 0)

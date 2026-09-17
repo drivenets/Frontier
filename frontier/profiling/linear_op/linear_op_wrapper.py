@@ -39,14 +39,33 @@ BACKLOG_REQUEST_FACTOR = 4.0   # requested spin = 4x the legacy loop wall: margi
 BACKLOG_COVERAGE_FACTOR = 3.0  # the delivered (event-measured) spin must cover 3x the legacy loop wall (sanity gate, test_backlog_covers_host_time)
 LEGACY_HOST_BOUND_RATIO_THRESHOLD = 1.15  # legacy/GPU-bound: 0.98-1.01 where the idle gap before the kernel is <= 6 us, >= 1.60 where >= 40 us
 FORWARD_SPAN_SCOPE = "forward_gpu_span"   # one event pair around each whole forward of the GPU-bound pass (F6 closure column)
+PROBE_CYCLES = 2_000_000  # shader-clock probe: a fixed-cycle spin timed by an event pair on the idle device (~1 ms at 2 GHz)
 _SLEEP_CYCLES_PER_MS = None
+
+
+def _sclk_probe_mhz() -> float:
+    """Concurrent shader-clock estimate: torch.cuda._sleep counts shader cycles, so PROBE_CYCLES / elapsed_us = MHz.
+
+    Called on an idle device (after a synchronize), so the start event stamps at enqueue and the pair brackets only the spin.
+    Cold-vs-warm calibrations measured ~2.0 vs ~2.4 GHz on MI355X (jobs 21385/21389), which is why every pass records it.
+    """
+    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    start.record()
+    torch.cuda._sleep(PROBE_CYCLES)
+    end.record()
+    torch.cuda.synchronize()
+    elapsed_us = start.elapsed_time(end) * 1e3
+    return PROBE_CYCLES / elapsed_us if elapsed_us > 0 else float("nan")
 
 
 def _empty_two_pass_fields() -> dict:
     """Fresh (unshared) values for profile methods without a second pass (record_function; kineto/perf_counter)."""
+    nan = float("nan")
     return {
-        "time_stats_hostbound": {}, "host_wall_per_forward_ms": float("nan"), "host_wall_per_forward_ms_backlog": float("nan"),
-        "gpu_backlog_ms": float("nan"), "gpu_backlog_ms_actual": float("nan"), "legacy_host_bound_ratio": {}, "legacy_host_bound": {},
+        "time_stats_hostbound": {}, "host_wall_per_forward_ms": nan, "host_wall_per_forward_ms_backlog": nan,
+        "host_enqueue_per_forward_ms": nan, "host_enqueue_per_forward_ms_backlog": nan,
+        "gpu_backlog_ms": nan, "gpu_backlog_ms_actual": nan, "legacy_host_bound_ratio": {}, "legacy_host_bound": {},
+        "sclk_mhz_legacy_start": nan, "sclk_mhz_legacy_end": nan, "sclk_mhz_backlog_start": nan, "sclk_mhz_backlog_end": nan,
     }
 
 
@@ -182,18 +201,21 @@ class LinearOpWrapper:
         return expected_keys
 
     def _timed_pass(self, input_ids, positions, *, backlog_ms: float, record_forward_span: bool):
-        """3 warm-up + ACTIVE_STEPS timed forwards; returns time_stats, loop_wall_ms and the measured spin.
+        """3 warm-up + ACTIVE_STEPS timed forwards; returns time_stats, loop_wall_ms, enqueue_ms, the measured spin and
+        the shader-clock probes.
 
-        Order (unchanged from the single-pass loop except for the optional spin): warm-up -> synchronize ->
-        mark_warmup_end -> [spin enqueued on the stream] -> timed forwards -> synchronize. The spin therefore precedes
-        every timed start event and is never inside a scope. TimerStatsStore arithmetic is untouched: get_stats() takes
-        the median over the same 50 timed runs.
+        Order: synchronize -> warm-up -> synchronize -> mark_warmup_end -> clock probe (sclk_mhz_start: the clock the timed
+        loop starts at, after warm-up) -> [spin enqueued on the stream] -> timed forwards -> host enqueue timestamp ->
+        synchronize -> clock probe (sclk_mhz_end). The probes use bare events, never CudaTimer, and sit outside every scope;
+        the spin precedes every timed start event. TimerStatsStore arithmetic is untouched: get_stats() takes the median
+        over the same 50 timed runs.
         """
         global _SLEEP_CYCLES_PER_MS
         self.timer_stats_store.clear_stats()
         diag = spike_diag.enabled
         span_timer = CudaTimer(FORWARD_SPAN_SCOPE) if record_forward_span else nullcontext()
         backlog_events = None
+        torch.cuda.synchronize()  # drain the input-construction kernels so warm-up starts on an idle device
         # Keep CPython's cyclic GC out of the timed region: a gen-2 collection on this thread lands between a
         # CudaTimer start event and the kernel launch and shows up as a 150-290 ms sample
         # (profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/05_linear_op_spike_root_cause.md).
@@ -210,6 +232,7 @@ class LinearOpWrapper:
 
             torch.cuda.synchronize()
             self.timer_stats_store.mark_warmup_end()
+            sclk_start = _sclk_probe_mhz()  # immediately before the timed loop, device idle after the synchronize
             if backlog_ms > 0:
                 backlog_events = _enqueue_gpu_backlog(backlog_ms)
             loop_t0 = time.perf_counter()
@@ -222,11 +245,13 @@ class LinearOpWrapper:
                 if diag:
                     spike_diag.forward_end()
 
+            enqueue_ms = (time.perf_counter() - loop_t0) * 1e3  # host wall until the last forward's launch call returned (HIP may still buffer before queue insertion)
             torch.cuda.synchronize()
             loop_wall_ms = (time.perf_counter() - loop_t0) * 1e3
         finally:
             if gc_was_enabled:
                 gc.enable()
+        sclk_end = _sclk_probe_mhz()
 
         backlog_actual_ms = 0.0
         if backlog_events is not None:
@@ -237,7 +262,10 @@ class LinearOpWrapper:
         return {
             "time_stats": self.timer_stats_store.get_stats(),
             "loop_wall_ms": loop_wall_ms,
+            "enqueue_ms": enqueue_ms,
             "backlog_actual_ms": backlog_actual_ms,
+            "sclk_mhz_start": sclk_start,
+            "sclk_mhz_end": sclk_end,
         }
 
     @torch.inference_mode()  # disable gradient calculation
@@ -291,7 +319,9 @@ class LinearOpWrapper:
             # Pass 1 (legacy): the loop exactly as before -> host-bound for short ops.
             legacy = self._timed_pass(input_ids, positions, backlog_ms=0.0, record_forward_span=False)
             time_stats = legacy["time_stats"]
-            two_pass_fields = {**_empty_two_pass_fields(), "host_wall_per_forward_ms": legacy["loop_wall_ms"] / ACTIVE_STEPS}
+            two_pass_fields = {**_empty_two_pass_fields(), "host_wall_per_forward_ms": legacy["loop_wall_ms"] / ACTIVE_STEPS,
+                               "host_enqueue_per_forward_ms": legacy["enqueue_ms"] / ACTIVE_STEPS,
+                               "sclk_mhz_legacy_start": legacy["sclk_mhz_start"], "sclk_mhz_legacy_end": legacy["sclk_mhz_end"]}
             if self.profile_method == ProfileMethod.CUDA_EVENT.value:
                 # Pass 2 (GPU-bound, CUDA_EVENT only - the other methods synchronise per scope): same loop with the device
                 # held behind the host by a spin enqueued before the timed forwards, so every event pair can only measure
@@ -303,6 +333,8 @@ class LinearOpWrapper:
                 two_pass_fields.update({
                     "time_stats_hostbound": legacy["time_stats"],
                     "host_wall_per_forward_ms_backlog": gpu_bound["loop_wall_ms"] / ACTIVE_STEPS,
+                    "host_enqueue_per_forward_ms_backlog": gpu_bound["enqueue_ms"] / ACTIVE_STEPS,
+                    "sclk_mhz_backlog_start": gpu_bound["sclk_mhz_start"], "sclk_mhz_backlog_end": gpu_bound["sclk_mhz_end"],
                     "gpu_backlog_ms": requested_backlog_ms,
                     "gpu_backlog_ms_actual": gpu_bound["backlog_actual_ms"],
                     "legacy_host_bound_ratio": legacy_ratio,
@@ -313,7 +345,9 @@ class LinearOpWrapper:
             "time_stats": time_stats,
             # two-column timing fields (CUDA_EVENT): time_stats_hostbound = legacy pass; host_wall_per_forward_ms = legacy
             # loop wall / 50 incl. the trailing sync ("W"); *_backlog = GPU-bound pass (contains the spin drain);
-            # gpu_backlog_ms = requested spin, gpu_backlog_ms_actual = event-measured spin; legacy_host_bound[_ratio] per op.
+            # gpu_backlog_ms = requested spin, gpu_backlog_ms_actual = event-measured spin; legacy_host_bound[_ratio] per op;
+            # host_enqueue_per_forward_ms{,_backlog} = host wall to the last launch / 50 (== wall when host-bound or queue-throttled);
+            # sclk_mhz_{legacy,backlog}_{start,end} = shader-clock probe immediately before and after each timed loop.
             **two_pass_fields,
             "n_head": self.model_config.num_q_heads,
             "n_kv_head": self.model_config.num_kv_heads,

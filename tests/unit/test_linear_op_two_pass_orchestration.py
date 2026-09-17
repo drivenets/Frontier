@@ -43,8 +43,13 @@ class _FakeDevice:
         self.gc_enabled_in_forward = []
 
     @property
+    def spin_calls(self):
+        """torch.cuda._sleep calls that are calibration or backlog spins (the fixed-cycle clock probes are excluded)."""
+        return [c for c in self.sleep_calls if c != low.PROBE_CYCLES]
+
+    @property
     def backlog_enqueued(self):
-        return bool(self.sleep_calls)
+        return bool(self.spin_calls)
 
     def make_event_class(self):
         device = self
@@ -167,7 +172,7 @@ def test_legacy_host_bound_flag_set_for_one_op_only(row):
 
 
 def test_backlog_enqueued_once_and_only_in_second_pass(row, device):
-    assert len(device.sleep_calls) == 1  # calibration skipped (module constant set), spin only before pass-2 timed loop
+    assert len(device.spin_calls) == 1  # calibration skipped (module constant set), spin only before pass-2 timed loop
     # legacy pass: 3 warm-up + 50 timed forwards, all at legacy durations; gpu-bound pass: warm-ups still legacy (spin
     # not yet enqueued), the 50 timed forwards at kernel durations.
     samples_legacy = _samples(row["time_stats_hostbound"]["attn_post_proj"])
@@ -192,11 +197,11 @@ def test_requested_backlog_honours_env_override(device, tmp_path, monkeypatch):
     monkeypatch.setattr(low, "_GPU_BACKLOG_MS", 123.0)  # what FRONTIER_GPU_BACKLOG_MS=123 sets at import
     out = _build_wrapper(device, "cuda_event", tmp_path).profile(64)
     assert out["gpu_backlog_ms"] == 123.0
-    assert device.sleep_calls == [int(123.0 * _STALE_CYCLES_PER_MS)]
+    assert device.spin_calls == [int(123.0 * _STALE_CYCLES_PER_MS)]
 
 
 def test_actual_backlog_is_event_measured_and_refits_calibration(row, device):
-    (cycles,) = device.sleep_calls
+    (cycles,) = device.spin_calls
     assert cycles == int(row["gpu_backlog_ms"] * _STALE_CYCLES_PER_MS)
     expected_actual = cycles / _DEVICE_CYCLES_PER_MS  # the spin under-delivers by 20 % against the stale calibration
     assert row["gpu_backlog_ms_actual"] == pytest.approx(expected_actual)
@@ -225,17 +230,17 @@ def test_static_metadata_passthrough(row):
 def test_enqueue_gpu_backlog_calibrates_on_first_use(device, monkeypatch, capsys):
     monkeypatch.setattr(low, "_SLEEP_CYCLES_PER_MS", None)
     start, end, cycles = low._enqueue_gpu_backlog(40.0)
-    assert device.sleep_calls[:2] == [20_000_000, 20_000_000]  # two calibration spins: the first warms the clock, the second is fitted
+    assert device.spin_calls[:2] == [20_000_000, 20_000_000]  # two calibration spins: the first warms the clock, the second is fitted
     assert low._SLEEP_CYCLES_PER_MS == pytest.approx(_DEVICE_CYCLES_PER_MS)
-    assert cycles == int(40.0 * _DEVICE_CYCLES_PER_MS) and device.sleep_calls[2] == cycles
+    assert cycles == int(40.0 * _DEVICE_CYCLES_PER_MS) and device.spin_calls[2] == cycles
     assert start.elapsed_time(end) == pytest.approx(40.0)
     assert device.synchronize_calls == 3  # one before and one after each calibration spin; the caller owns the trailing sync
     assert "cycles_per_ms=250000" in capsys.readouterr().out
 
 
 def test_enqueue_gpu_backlog_skips_calibration_when_fitted(device):
-    start, end, cycles = low._enqueue_gpu_backlog(10.0)
-    assert device.sleep_calls == [cycles] and cycles == int(10.0 * _STALE_CYCLES_PER_MS)
+    start, end, cycles = low._enqueue_gpu_backlog(12.0)  # 12 ms: 10 ms x the stale rate would equal PROBE_CYCLES
+    assert device.spin_calls == [cycles] and cycles == int(12.0 * _STALE_CYCLES_PER_MS)
     assert device.synchronize_calls == 0
     assert start.elapsed_time(end) == pytest.approx(cycles / _DEVICE_CYCLES_PER_MS)
 
@@ -245,7 +250,7 @@ def test_profile_calibrates_once_across_tasks(device, tmp_path, monkeypatch):
     wrapper = _build_wrapper(device, "cuda_event", tmp_path)
     wrapper.profile(64)
     wrapper.profile(128)
-    assert len(device.sleep_calls) == 4 and device.sleep_calls[:2] == [20_000_000, 20_000_000]  # 2 calibration spins once + 1 spin per task
+    assert len(device.spin_calls) == 4 and device.spin_calls[:2] == [20_000_000, 20_000_000]  # 2 calibration spins once + 1 spin per task
 
 
 # ---------------------------------------------------------------- _timed_pass directly
@@ -254,7 +259,7 @@ def test_timed_pass_without_backlog_reports_zero_actual(device, tmp_path):
     wrapper = _build_wrapper(device, "cuda_event", tmp_path)
     ids = torch.zeros(4, dtype=torch.long)
     out = wrapper._timed_pass(ids, ids, backlog_ms=0.0, record_forward_span=False)
-    assert out["backlog_actual_ms"] == 0.0 and device.sleep_calls == []
+    assert out["backlog_actual_ms"] == 0.0 and device.spin_calls == []
     assert set(out["time_stats"]) == set(LEGACY_MS) and out["loop_wall_ms"] > 0
     assert low._SLEEP_CYCLES_PER_MS == _STALE_CYCLES_PER_MS  # nothing measured -> no re-fit
 
@@ -310,7 +315,7 @@ def rf_row(device, tmp_path, monkeypatch, capsys):
 
 def test_record_function_path_runs_one_untimed_pass_and_no_backlog(rf_row, device):
     out, _ = rf_row
-    assert device.sleep_calls == []  # no spin on this path
+    assert device.spin_calls == []  # no spin on this path
     assert len(_FakeTracer.created) == 1
     assert out["time_stats"] == {"attn_post_proj": {"median": 0.01, "count": 50, "warmup_count": 0}}
 

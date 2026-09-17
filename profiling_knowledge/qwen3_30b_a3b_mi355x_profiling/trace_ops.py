@@ -31,6 +31,9 @@ for tok in sorted(a.tokens, reverse=True):  # same descending order as the sweep
     r = w.profile(tok)
     torch.cuda.nvtx.range_pop()
     ts = r["time_stats"]
-    rec = {"tp": a.tp, "tokens": tok, "t_wall": round(time.time(), 3), "W_ms": round(float(r["host_wall_per_forward_ms"]), 5),
-           "backlog_ms": r["gpu_backlog_ms"], **{k: round(float(v["median"]), 5) for k, v in ts.items()}}
+    scalars = {k: (round(float(r[k]), 5) if isinstance(r[k], (int, float)) else r[k]) for k in
+               ("host_wall_per_forward_ms", "host_wall_per_forward_ms_backlog", "gpu_backlog_ms", "gpu_backlog_ms_actual") if k in r}
+    rec = {"tp": a.tp, "tokens": tok, "t_wall": round(time.time(), 3), "W_ms": scalars.get("host_wall_per_forward_ms"),
+           "backlog_ms": scalars.get("gpu_backlog_ms"), **scalars, **{k: round(float(v["median"]), 5) for k, v in ts.items()},
+           **{f"hostbound.{k}": round(float(v["median"]), 5) for k, v in r.get("time_stats_hostbound", {}).items()}}
     print(json.dumps(rec), flush=True)

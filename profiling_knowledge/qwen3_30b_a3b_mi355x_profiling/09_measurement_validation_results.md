@@ -35,12 +35,81 @@ GPU-bound one where the GPU was idle) and T2 keeps the work-dependence test wher
 The T2 TP4 margin is 3–7 % and is a known flake risk to be reported, not re-thresholded. **Weakness kept on record:** the "legacy must fail"
 half of `--expect green` is satisfied by T1's mis-specification alone, so it is a weak check; the decisive half is T1′/T2.
 
-## 3. F6 and the other failed conditions
+## 3. F6 and the other failed conditions (superseded for F6 by §3a below)
 See the debug report's "failed first" section for the full list. F6 (whole-forward closure `W′ ≈ Σ kernel durations`) fired: W′ exceeds the
 kernel sum by 8–53 %. The traced gap structure locates the excess at the profiler's own 20 event records per forward (30 of 41 kernel
 boundaries have 0.00 µs gap; 11 carry all of it at event positions), plus an unexplained ≈40 µs at 8 tokens. The per-op claim does not use
 this identity. The fixed profiler now records `time_stats.forward_gpu_span` so closure is measured on every row: 0.985–0.991 at ≥ 3072
 tokens, 0.965/0.971 at 1/64 tokens, **0.74–0.79 at 8 tokens** on run 21389 (see RUN.md); the 8-token residual is open.
+
+### 3a. F6 closed out (2026-09-17, follow-up): arithmetic and mechanism
+
+Quantity: `forward_gpu_span` is one event pair around each whole forward of the GPU-bound pass, so it **already contains** the 20 per-op
+event records inside the forward. The only instrument cost outside the spans is the span pair itself: 2 records × 2.6–3.7 µs ≈ 5–7 µs per
+forward. Predicted gap between consecutive spans: 5–7 µs. Observed (single process, 50 forwards, job 21392, µs per forward = (W_backlog×50 −
+spin)/50 − span):
+
+| tokens | TP2 gap | TP4 gap | closure | predicted | verdict |
+|---|---|---|---|---|---|
+| 8 | 24.0 | 25.1 | 0.90 / 0.89 | 5–7 | **residual 17–20 µs** |
+| 64 | 6.3 | 6.9 | 0.97 / 0.97 | 5–7 | closes |
+| 512 | 17.2 | 23.5 | 0.94 / 0.91 | 5–7 | **residual 10–18 µs** |
+| 3072 | 4.6 | 4.6 | 0.99 / 0.99 | 5–7 | closes |
+
+In the 8-worker pipeline the 8-token residual is larger (closure 0.76–0.80 in jobs 21389/21397, 0.74–0.91 in job 21400). **Mechanism of the residual — HIP
+command-queue backpressure**, established by two independent measurements: (i) varying the loop length (job 21396): with 25 timed forwards
+the gap is 4–7 µs at every shape (closure 0.97–0.99), with 50 it is 20–26 µs at 8 tokens and 23 µs at 512/TP4, with 100 the closure
+collapses everywhere and spans exceed the wall (the device idles *inside* forwards); (ii) the new `host_enqueue_per_forward_ms_backlog`
+column (jobs 21397 and 21400, identical to ±1 %): the host finishes enqueueing at 97–100 % of the loop wall at 8 tokens, 94–100 % at 64/512 and 86–96 % at ≥ 3072 tokens,
+although its own work per forward is 0.59 ms — it is blocked on a full queue for most of the spin, released at the device's consumption
+rate, and for the fastest forwards (8 tokens: 214 µs of device work vs 590 µs of host work) the device catches the host before the loop
+ends and idles. So the spin guarantees a GPU-bound measurement only for the first *queue-capacity* worth of packets; with 41 kernels + 22
+event records per forward, 50 forwards ≈ 3,150 packets exceed it. **F6 status: resolved as instrument mechanics** — the 20-records term
+explains the ≥ 64-token rows, queue backpressure the 8-token (and TP4@512) rows. Remaining check, not yet run: the queue size itself
+(`ROC_AQL_QUEUE_SIZE` / `GPU_MAX_COMMAND_BUFFERS` are present in this HIP build; raising it should remove the 50-forward residual).
+Consequence for hetcalc: the per-op medians are unaffected (event = kernel + 0.3…3.9 µs on all shapes), but any *whole-forward* quantity
+taken from the GPU-bound pass at ≤ 8 tokens with 50 forwards under-counts device idle by up to ~25 %; the recollection must use ≤ 25
+forwards per spin or split the loop so the queue never fills.
+
+### 3b. Item 2 — clock lock available; the 5–11 % TP4/TP8 residual is clock
+`rocm-smi --setperfdeterminism <MHz>` works for this account on the compute nodes without sudo (job 21395 locked all 8 GPUs of
+`amd-mi355x-7` at 1900 MHz under an exit trap that restored `auto`; also `sudo -n` is available). Findings at 1900 MHz:
+- The probe reads 1890–1916 MHz → `torch.cuda._sleep` cycles are shader-clock cycles; the probe's unit is validated.
+- Large GEMM kernels are 16–26 % slower than at automatic clock (auto/locked 0.79–0.90 for o_proj and the QKV scope at ≥ 3072 tokens),
+  consistent with the automatic clock boosting to ≈2.3–2.4 GHz during them; ≤ 10 µs kernels change 0–10 % (fixed-cost bound).
+- GPU-bound event − no-knob kernel at locked clock = +0.5…+3.6 µs at every TP and shape (TP2 +0.9…+3.6, TP4 +0.7…+3.1, TP8 +0.5…+3.2),
+  i.e. the same instrument gap as at auto; at auto the no-knob/knob kernel ratio at TP4/TP8 was 1.05–1.11. **The residual was clock**;
+  the queue-timestamp share is bounded by the ≈2 µs instrument gap.
+- Where the legacy loop is GPU-bound (TP1 ≥ 3072) the two columns agree to 1.000–1.004 at locked clock (1.009–1.020 at auto).
+- Incident, disclosed: the availability probe itself locked GPU 0 of `amd-mi355x-7` for ≈2 min (09:41:54–09:44) with no job of mine on
+  the node; `squeue` showed no other job there in that window. Reset to `auto` verified.
+
+**Clock trajectory per pass, measured (job 21400, `runs/2026-09-17_1016_…_probe/`).** With the probe immediately before the timed loop —
+after the 3 warm-up forwards and a synchronize — the legacy pass still starts at 648–948 MHz on 32/36 rows (median 798) and ends at
+2325–2424 MHz; the GPU-bound pass, which follows it without an idle gap, reads 2243–2423 MHz at start and 2368–2424 at end. The 10:10
+collection with the probe *before* warm-up read 803–983 MHz on the same 32 rows: the warm-up changed nothing. Consequence: the legacy
+column's early timed samples run at ≈⅓ of the clock the GPU-bound column sees, so the two columns differ by clock trajectory as well as by
+queue state, and any single-pass automatic-clock collection needs a clock-ramp warm-up (see `10_measurement_contract.md`, precondition).
+The four 1-token rows start at ≈2.4 GHz because they follow another task's activity on the same worker — clock state is set by what ran
+before the task, not by the task's own warm-up.
+
+### 3c. Item 3 — `--profile_method record_function` works on this image and is a viable primary instrument
+Job 21393 (8 workers, validation grid): 32 rows in 63 s, `linear_op_kernel_only.csv`, `measurement_type=KERNEL_ONLY`; per scope it sums
+the kernel events correlated (by correlation id) to the `record_function` user annotation, so **no roctx ranges are needed** for
+attribution. Against my manual kernel segmentation (rocprofv3, job 21376) and the GPU-bound event column (job 21389):
+
+| scope | rf / rocprof kernel sum | rf vs GPU-bound event |
+|---|---|---|
+| `attn_post_proj` (one GEMM) | 0.96–1.07 at ≥ 8 tokens (0.85–1.23 at 1 token, sub-4 µs kernel) | rf lower by 0.3–5 µs (no dispatch gap) |
+| `attn_pre_proj` (GEMM + 4 kernels) | 0.93–1.08 at ≥ 3072; **1.12–1.34 at 8–64 tokens** | within 3 % at ≥ 3072 |
+| `attn_rope` (13 tiny kernels) | **0.86–1.24**, scatter at every shape | ±20 % |
+
+Per-kernel device times of tiny kernels differ between kineto and rocprofv3 by up to 20–34 %, so for multi-tiny-kernel scopes neither
+instrument is a reference for the other. Its own perturbation: the tracer changes the loop structure (the model block is repeated 50×
+inside one traced forward instead of 50 forwards) and adds tracer overhead on the host; host period was not measured in this trial; GEMM
+kernel durations agree with rocprofv3 within 2 %. Output schema: min/max/mean/median/std/count per scope, no `samples`, no `warmup_count`.
+Verdict: suitable as the primary kernel-time column for GEMM scopes (with events as the cross-check), subject to a run that logs the
+clock probe alongside it and to the contract in `10_measurement_contract.md`.
 
 ## 4. Cross-instrument agreement — what is and is not covered
 Event (GPU-bound) vs traced kernel agree within +0.3…+3.9 µs. That is 1–7 % for kernels ≥ 20 µs (o_proj at TP1 ≥ 8 tokens, TP2 ≥ 3072,

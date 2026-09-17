@@ -39,6 +39,12 @@ tokens, TP2 8192) the two columns agree within 1–2 %, which bounds the pure-cl
 the traced no-knob/knob duration ratio is 1.05–1.11 (o_proj at TP4/TP8) and up to 1.4 (MLP GEMMs ≤ 11 µs), part of which is clock. No
 per-shape clock was logged in this run; a concurrent SCLK estimate per pass is a prerequisite for the next collection.
 
+## Status (2026-09-17, later the same day)
+Superseded as the reference validation-grid file by `runs/2026-09-17_1016_linear_op_validation_grid_two_column_probe/`, which adds the
+per-row shader-clock probe and host-enqueue columns. This run has no clock probe; `sanity_check.py` accepts it with the note
+"two-column run WITHOUT the clock probe" (its recorded PASS above remains reproducible). Clock state of its two passes is inferred, not
+measured, from the calibration figures quoted below.
+
 ## Limitations / findings recorded
 - **F6 whole-forward closure** (`forward_gpu_span×50 / (backlog wall×50 − spin)`): 0.985–0.991 at ≥ 3072 tokens, 0.965/0.971 at
   1/64 tokens, **0.74–0.79 at 8 tokens** (unexplained; also seen in job 21376 and 21385). 23/32 rows within ±3 %. The per-op
