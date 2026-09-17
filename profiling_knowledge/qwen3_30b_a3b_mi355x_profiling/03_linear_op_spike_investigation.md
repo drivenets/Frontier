@@ -73,4 +73,35 @@ How to discriminate, if it matters: re-run the **full** dense sweep (job 21313's
 similar one-run spike appears again at a different band with the lockstep signature (same index across 8 consecutive
 tokens, all TPs), it is a systematic library event tied to sweep history (candidate 1) and worth a hipBLASLt log
 (`HIPBLASLT_LOG_LEVEL`) or a torch profiler trace around it; if the reruns are clean, it was environmental (candidate 2).
-Not done as of 2026-09-16 — the data is usable as is and the medians do not depend on the answer.
+Done 2026-09-16 — see below.
+
+## 2026-09-16 update: the full re-run reproduces it exactly
+
+(Self-contained hand-off for an external specialist, with environment, versions, code paths and suggested experiments: `04_linear_op_spike_specialist_brief.md`.)
+
+Job 21334 re-ran job 21313's command unchanged on **another node** (`amd-mi355x-8`, first run was on node 9), 17 hours later
+(`data/profiling/compute/mi355x/qwen3-a3b-30b-moe/runs/2026-09-16_0629_linear_op_dense3327_rerun/`). Result: the same 32 rows
+(`attn_pre_proj`, tokens 1968–1975, TP 1/2/4/8) each have exactly one run of 150–263 ms at **timed index 11**, and no other row in
+the file has a run above 20× its median (apart from the usual `emb` run-0 warm-up outlier). Medians agree with the first run
+(rerun/first p50 0.998, p5–p95 0.91–1.06).
+
+This settles the discrimination above: **candidate 2 (environmental stall) is out; it is a systematic, deterministic event keyed to
+the sweep history (candidate 1)**, and the 26-token repro missed it only because it started at 1985 instead of 16384.
+
+Why every TP pass hits the same spot: `frontier/profiling/linear_op/main.py:561` loops over TPs, and inside that loop (line ~688)
+it creates a **fresh** `ProcessPoolExecutor` per GPU. So each TP pass starts eight brand-new processes that replay an identical
+sequence of allocations and kernel launches (same descending token list, round-robin `idx % 8`), and tokens 1968–1975 are the eight
+tasks at per-worker position **169** (0-based) in that list. A deterministic in-process counter/threshold reached at
+(169 tasks × 53 forwards + 3 warm-ups + 11) explains "same tokens, same run index, every TP, every node" with no coincidence.
+
+What the event is remains open. Plausible mechanisms with that signature: the PyTorch caching allocator (each task allocates and
+frees a fresh set of weights, ~40 MB, so the cache fragments deterministically; a `hipMalloc`/segment release at a fixed point in the
+sequence costs 100+ ms, and eight processes doing it simultaneously contend on the driver, matching the 150–260 ms spread), or a
+lazily loaded hipBLASLt/Tensile kernel variant whose first use is at that point (less likely: it would land on the first forward of a
+shape, not the 15th).
+
+Cheap way to pin it down (two ~2-min jobs, not run): (a) the dense list starting at 2048 instead of 16384 — if position-keyed,
+the spike moves to whatever token sits at per-worker position 169, i.e. a different band; (b) the same run with
+`PYTORCH_NO_HIP_MEMORY_CACHING=1` or `torch.cuda.memory._record_memory_history` / `HIPBLASLT_LOG_LEVEL=3` in the worker to catch
+the event. Practical consequence for analysis: keep using medians; when using per-run samples, drop timed run 11 of rows with
+`num_tokens` 1968–1975 in both dense runs (the rows are otherwise normal).

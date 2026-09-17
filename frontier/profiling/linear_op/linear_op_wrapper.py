@@ -1,3 +1,4 @@
+import gc
 import os
 
 import torch
@@ -162,30 +163,39 @@ class LinearOpWrapper:
             self.timer_stats_store.clear_stats()
 
             diag = spike_diag.enabled
-            for _ in range(WARMUP_STEPS):
-                if diag:
-                    spike_diag.forward_begin()
-                self.model(
-                    input_ids,
-                    positions,
-                )
-                if diag:
-                    spike_diag.forward_end()
+            # Keep CPython's cyclic GC out of the timed region: a gen-2 collection on this thread lands between a
+            # CudaTimer start event and the kernel launch and shows up as a 150-290 ms sample
+            # (profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/05_linear_op_spike_root_cause.md).
+            gc_was_enabled = gc.isenabled()
+            gc.disable()
+            try:
+                for _ in range(WARMUP_STEPS):
+                    if diag:
+                        spike_diag.forward_begin()
+                    self.model(
+                        input_ids,
+                        positions,
+                    )
+                    if diag:
+                        spike_diag.forward_end()
 
-            torch.cuda.synchronize()
-            self.timer_stats_store.mark_warmup_end()
+                torch.cuda.synchronize()
+                self.timer_stats_store.mark_warmup_end()
 
-            for _ in range(ACTIVE_STEPS):
-                if diag:
-                    spike_diag.forward_begin()
-                self.model(
-                    input_ids,
-                    positions,
-                )
-                if diag:
-                    spike_diag.forward_end()
+                for _ in range(ACTIVE_STEPS):
+                    if diag:
+                        spike_diag.forward_begin()
+                    self.model(
+                        input_ids,
+                        positions,
+                    )
+                    if diag:
+                        spike_diag.forward_end()
 
-            torch.cuda.synchronize()
+                torch.cuda.synchronize()
+            finally:
+                if gc_was_enabled:
+                    gc.enable()
 
             time_stats = self.timer_stats_store.get_stats()
 
