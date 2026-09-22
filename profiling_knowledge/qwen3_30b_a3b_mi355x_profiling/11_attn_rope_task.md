@@ -1,4 +1,17 @@
-# Task: replace the torch RoPE fallback in linear_op profiling (opened 2026-09-17)
+# Task: replace the torch RoPE fallback in linear_op profiling (opened 2026-09-17; **implemented the same day as TASK-1 of the recollection plan**)
+
+**Status (2026-09-17, TASK-1 of `.claude/plans/linear-op-recollection-contract-a.md`).** The premise "vLLM's `get_rope()` signature
+mismatches" is wrong for the linear_op image: vLLM `0.9.2rc2.dev2065` accepts Frontier's call (Slurm job 21402). But vLLM's own
+`RotaryEmbedding` on ROCm dispatches `forward_hip` → `forward_native` (17 torch kernels, 45–160 µs) unless AITER is enabled, and never
+calls the fused `rotary_embedding` op (jobs 21403/21405). SGLang's `RotaryEmbedding.forward_hip` on the same image launches the fused
+`rotary_embedding_kernel` (job 21409: 4.0/5.6/27.9 µs at 8/512/4096 tokens, TP1), numerically identical to Frontier's own
+`RotaryEmbedding` calling `vllm._custom_ops.rotary_embedding` (4.1/5.5/28.0 µs). Implemented: `get_rope` prefers Frontier's class with
+the fused op; the torch fallback is per-head (correct) and no longer forced by the collection script; every row records `attn_rope_impl`;
+`sanity_check.py` rejects non-`vllm_kernel` rows unless `--allow-rope-fallback`. Scope name `attn_rope` kept (the attention trainer
+requires `time_stats.attn_rope.median`); disambiguation is by the column, not by a rename (deviation from step 2 below). AITER's own
+`get_rope` is also correct (job 21409: 7.6/8.5/19.9 µs) but is not what SGLang launches for this config; the wrong AITER output seen in
+job 21406 came from vLLM's `forward_hip_rocm_aiter` wrapper.
+
 
 **Why it is the most serious open item.** `attn_rope` in every linear_op run is the pure-PyTorch fallback selected by
 `FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1` (sbatch line 80; cookbook gotcha 4). `_apply_rotary_pos_emb` receives `cos` of width 64

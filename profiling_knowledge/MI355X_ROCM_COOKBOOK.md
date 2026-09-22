@@ -29,7 +29,7 @@ pip install -e ".[test]"
 
 # 4. The two env vars that make Frontier's profiling scripts work on ROCm
 export CUDA_VISIBLE_DEVICES=0                        # yes, this exact name — see gotcha #2
-export FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1 # needed for linear_op only — see gotcha #4
+export FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1 # rocm/vllm 0.16 image ONLY — see gotcha #4 and its 2026-09-17 correction; do NOT set it on the sglang image
 
 # 5. Profile
 DEVICE=mi355x MODEL=meta-llama/Llama-2-7b-hf TP_SIZES="1 2 4 8" PROFILE_METHOD=cuda_event \
@@ -113,6 +113,16 @@ rows, since the causal-masking logic for chunked prefill relies on PyTorch
 SDPA's bottom-right-aligned causal semantics.
 
 ### 4. vLLM API drift: `get_rope()` signature mismatch (linear_op profiling only)
+> **Correction (2026-09-17).** This gotcha is image-specific and the workaround is numerically wrong. In the linear_op image
+> `lmsysorg/sglang:v0.5.11-rocm700-mi35x` (vLLM `0.9.2rc2.dev2065`) `get_rope(head_size, rotary_dim, max_position, base,
+> is_neox_style, rope_scaling, dtype, ...)` accepts exactly the keywords Frontier passes, and `_custom_ops.rotary_embedding(positions,
+> query, key, head_size, cos_sin_cache, is_neox)` matches Frontier's call - verified inside the image (Slurm job 21402). The
+> `TypeError` below was seen with the `0.16.1.dev10` vLLM of a different image. The torch fallback that this gotcha recommended
+> rotated only the first 64 columns of head 0 of the flattened q/k (see `profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/11_attn_rope_task.md`);
+> every `attn_rope` timing collected with `FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1` before 2026-09-17 timed 13 launch-bound
+> torch kernels that were not RoPE. The fallback is now per-head (correct numerics) but still slower than the fused kernel; the
+> collection script no longer forces it, every linear_op row records `attn_rope_impl`, and `sanity_check.py` rejects fallback rows
+> unless `--allow-rope-fallback`. Use the env var only for an image whose vLLM really rejects the call.
 Symptom: `TypeError: get_rope() got an unexpected keyword argument 'rotary_dim'`,
 raised from `frontier/profiling/common/layers/rotary_embedding.py` calling
 `vllm.model_executor.layers.rotary_embedding.get_rope(...)`. The vLLM dev

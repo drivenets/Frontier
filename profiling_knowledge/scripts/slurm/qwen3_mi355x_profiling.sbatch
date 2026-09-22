@@ -70,19 +70,28 @@ case "$STAGE" in
     ;;
   linear_op)
     # LINEAR_CMD_PREFIX (e.g. "rocprofv3 --kernel-trace --output-format csv -d <dir> --") wraps the profiler; LINEAR_TPS overrides "1 2 4 8".
+    # LINEAR_PROFILE_METHODS (default "cuda_event record_function") runs each method into the same COLLECT_DIR: cuda_event ->
+    # linear_op.csv (two timing columns), record_function -> linear_op_kernel_only.csv (kineto per-scope kernel time).
+    # RoPE: the torch fallback is NOT forced any more - this image's vLLM (0.9.2rc2) accepts Frontier's get_rope() call and the
+    # fallback computed the wrong thing (11_attn_rope_task.md); set LINEAR_DOCKER_ENV="-e FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1"
+    # only for an image where the vLLM signature really mismatches (sanity_check then needs --allow-rope-fallback).
+    # FRONTIER_RF_KEEP_TRACES=1 keeps the ~4.9 MB kineto trace per shape (default: deleted after parsing).
     # Token grid: dense by default (every count to 2048, every 8 to 8192, every 16 to 16384; 4000 excluded = known GPU fault),
     # 3,327 values; a strict superset of the profiler's 386-value grid. Override with LINEAR_TOKENS_PY (a python expression).
     TOKENS_PY="${LINEAR_TOKENS_PY:-sorted((set(range(1, 2049)) | set(range(2056, 8193, 8)) | set(range(8208, 16385, 16))) - set([4000]))}"  # no braces: they end the \${var:-} default early
     TOKENS=$(docker run --rm -v "$PWD":/workspace/frontier -w /workspace/frontier -e PYTHONPATH=/workspace/frontier "$IMAGE" \
       python -c "print(*$TOKENS_PY)")
-    docker run --rm "${DOCKER_GPU_FLAGS[@]}" \
-      -v "$PWD":/workspace/frontier -w /workspace/frontier -e PYTHONPATH=/workspace/frontier \
-      -e FRONTIER_PROFILING_FORCE_TORCH_ROPE_FALLBACK=1 -e HSA_ENABLE_COREDUMP=0 -e CUDA_VISIBLE_DEVICES="$GPU_IDS" -e HIP_VISIBLE_DEVICES="$GPU_IDS" \
-      ${LINEAR_DOCKER_ENV:-} \
-      "$IMAGE" ${LINEAR_CMD_PREFIX:-} python -m frontier.profiling.linear_op.main --disable_ray --yes --device mi355x --models "$MODEL" --is_moe \
-        --num_gpus "${LINEAR_NUM_GPUS:-8}" --num_tensor_parallel_workers ${LINEAR_TPS:-1 2 4 8} --precision BF16 --profile_method cuda_event \
-        --max_tokens 16384 --num_tokens_list $TOKENS --output_dir "${COLLECT_DIR:-data/profiling}" \
-      > "data/profiling/sweep_work/logs/linear_op${LINEAR_LOG_SUFFIX:-}.log" 2>&1
+    for M in ${LINEAR_PROFILE_METHODS:-cuda_event record_function}; do
+      docker run --rm "${DOCKER_GPU_FLAGS[@]}" \
+        -v "$PWD":/workspace/frontier -w /workspace/frontier -e PYTHONPATH=/workspace/frontier \
+        -e HSA_ENABLE_COREDUMP=0 -e CUDA_VISIBLE_DEVICES="$GPU_IDS" -e HIP_VISIBLE_DEVICES="$GPU_IDS" \
+        -e FRONTIER_RF_KEEP_TRACES="${FRONTIER_RF_KEEP_TRACES:-0}" \
+        ${LINEAR_DOCKER_ENV:-} \
+        "$IMAGE" ${LINEAR_CMD_PREFIX:-} python -m frontier.profiling.linear_op.main --disable_ray --yes --device mi355x --models "$MODEL" --is_moe \
+          --num_gpus "${LINEAR_NUM_GPUS:-8}" --num_tensor_parallel_workers ${LINEAR_TPS:-1 2 4 8} --precision BF16 --profile_method "$M" \
+          --max_tokens 16384 --num_tokens_list $TOKENS --output_dir "${COLLECT_DIR:-data/profiling}" \
+        > "data/profiling/sweep_work/logs/linear_op${LINEAR_LOG_SUFFIX:-}_${M}.log" 2>&1 || { echo "linear_op ${M} failed" >&2; exit 1; }
+    done
     ;;
   *) echo "unknown STAGE=$STAGE" >&2; exit 2 ;;
 esac

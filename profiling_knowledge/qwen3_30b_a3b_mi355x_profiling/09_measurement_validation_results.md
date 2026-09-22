@@ -116,7 +116,13 @@ Event (GPU-bound) vs traced kernel agree within +0.3…+3.9 µs. That is 1–7 %
 QKV at every TP ≥ 3072) and **20–80 % for kernels ≤ 10 µs** (o_proj at TP2/4/8 below ~1000 tokens, the 1-token path everywhere, the
 individual RoPE/norm kernels). Rows in the dataset whose GPU-bound `attn_post_proj` median is below ≈ 0.020 ms (TP4/TP8 below ~3000 tokens,
 TP2 below ~1500, TP1 below ~500) should be read as *un-cross-validated*: the instrument's own ≈3 µs floor is a large fraction of the value.
-`attn_rope` is un-cross-validatable in either column (13-kernel torch fallback, numerically wrong).
+`attn_rope` in every run up to `runs/2026-09-17_1016_…_probe/` is un-cross-validatable in either column (13-kernel torch fallback,
+numerically wrong). **From `runs/2026-09-17_1250_linear_op_rope_fix_validation_grid/` on** (TASK-1 of the recollection plan, `11_`)
+`attn_rope` is the fused `vllm::rotary_embedding_kernel` (one kernel per scope, `attn_rope_impl = vllm_kernel`): GPU-bound event
+0.0063–0.0465 ms vs kernel-only 0.0020–0.0440 ms, i.e. the same ≈2.5–3 µs record cost as the GEMM scopes; the kernel is ≤ 10 µs below
+≈3072 tokens at TP1 and everywhere at TP8, so those rope rows fall in the un-cross-validated band like the small GEMMs; ≥ 3072 tokens at
+TP1/TP2 (kernel ≥ 12 µs) the two instruments agree to 0.89–0.95 (event above kernel by the record cost). The old fallback values were
+2.1–8.3× higher than the kernel.
 
 ## 5. Scorecard — every committed number
 Generated 2026-09-17 by `scorecard.py` from the raw outputs of jobs 21376 (single-process traces, modes a/b/c/c′), and the detector/RoPE

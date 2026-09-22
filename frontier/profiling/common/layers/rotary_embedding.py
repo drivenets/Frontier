@@ -133,56 +133,75 @@ def _should_prefer_torch_rope_fallback() -> bool:
         return False
 
 
-def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return torch.cat((-x2, x1), dim=-1)
-
-
 def _apply_rotary_pos_emb(
     q: torch.Tensor,
     k: torch.Tensor,
     cos: torch.Tensor,
     sin: torch.Tensor,
     is_neox_style: bool,
+    *,
+    head_size: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Apply rotary position embedding to query and key tensors.
+    """Apply rotary position embedding to query and key tensors, PER HEAD.
 
-    This is a pure PyTorch implementation that replaces the custom CUDA kernel.
+    Pure PyTorch equivalent of vLLM's rotary_embedding kernel (portable path). Before 2026-09-17 this function took
+    `rotary_dim = cos.shape[-1]` and rotated `q[..., :rotary_dim]` of the FLATTENED [num_tokens, num_heads * head_size]
+    tensor, i.e. the first half of head 0 only, leaving every other head untouched (11_attn_rope_task.md).
 
     Args:
-        q: [num_tokens, num_heads * head_size] - query tensor
-        k: [num_tokens, num_heads * head_size] - key tensor
-        cos: [num_tokens, rotary_dim] - cosine values
-        sin: [num_tokens, rotary_dim] - sine values
-        is_neox_style: whether to use GPT-NeoX style rotation
+        q: [num_tokens, num_q_heads * head_size]
+        k: [num_tokens, num_kv_heads * head_size]
+        cos, sin: [num_tokens, rotary_dim // 2] - one value per rotated pair (the cos/sin halves of the cache row)
+        is_neox_style: True -> pairs (i, i + rotary_dim/2); False -> GPT-J interleaved pairs (2i, 2i + 1)
+        head_size: width of one head in the flattened tensors
 
     Returns:
-        Tuple of rotated query and key tensors
+        Tuple of rotated query and key tensors with the input shapes and dtypes.
     """
-    # Get rotary dimension from cos/sin
-    rotary_dim = cos.shape[-1]
+    rotary_dim = 2 * cos.shape[-1]
+    if rotary_dim > head_size:
+        raise ValueError(f"rotary_dim {rotary_dim} exceeds head_size {head_size}")
+    cos = cos.unsqueeze(-2)  # [num_tokens, 1, rotary_dim/2] broadcasts over heads
+    sin = sin.unsqueeze(-2)
 
-    # Split q and k into rotary and non-rotary parts
-    q_rot = q[..., :rotary_dim]
-    q_pass = q[..., rotary_dim:]
-    k_rot = k[..., :rotary_dim]
-    k_pass = k[..., rotary_dim:]
+    def rotate(x: torch.Tensor) -> torch.Tensor:
+        num_tokens = x.shape[0]
+        xh = x.view(num_tokens, -1, head_size)
+        x_rot, x_pass = xh[..., :rotary_dim], xh[..., rotary_dim:]
+        if is_neox_style:
+            x1, x2 = x_rot[..., : rotary_dim // 2], x_rot[..., rotary_dim // 2 :]
+            rotated = torch.cat((x1 * cos - x2 * sin, x2 * cos + x1 * sin), dim=-1)
+        else:
+            x1, x2 = x_rot[..., 0::2], x_rot[..., 1::2]
+            rotated = torch.stack((x1 * cos - x2 * sin, x2 * cos + x1 * sin), dim=-1).flatten(-2)
+        return torch.cat((rotated, x_pass), dim=-1).view(num_tokens, -1)
 
-    # Apply rotation to rotary dimensions
-    if is_neox_style:
-        q_rot_embed = (q_rot * cos) + (_rotate_half(q_rot) * sin)
-        k_rot_embed = (k_rot * cos) + (_rotate_half(k_rot) * sin)
-    else:
-        q_rot_embed = (q_rot * cos) + (_rotate_half(q_rot) * sin)
-        k_rot_embed = (k_rot * cos) + (_rotate_half(k_rot) * sin)
+    return rotate(q), rotate(k)
 
-    # Concatenate rotated and non-rotated parts
-    q_embed = torch.cat([q_rot_embed, q_pass], dim=-1)
-    k_embed = torch.cat([k_rot_embed, k_pass], dim=-1)
 
-    return q_embed, k_embed
+def _fused_rope_kernel_available() -> bool:
+    """True when this module's RotaryEmbedding.forward will call vllm._custom_ops.rotary_embedding (the fused HIP/CUDA kernel)."""
+    return not _should_prefer_torch_rope_fallback() and _load_vllm_custom_ops() is not None
+
+
+def rope_impl_name(rotary_emb: Optional[nn.Module]) -> str:
+    """Which RoPE implementation a model's attention layer actually calls (recorded per profiled row as attn_rope_impl).
+
+    'vllm_kernel'    this module's RotaryEmbedding family with the fused vllm._custom_ops.rotary_embedding kernel - one launch,
+                     the same kernel family SGLang's own RotaryEmbedding.forward_hip launches on this image (2026-09-17 probe);
+    'torch_fallback' this module's RotaryEmbedding family on the pure-torch path (forced by env or no vLLM custom ops);
+    'vllm_object_<forward method>' an object from a vllm.* module - on ROCm vLLM 0.9.2 dispatches forward_hip -> forward_native
+                     (17 torch kernels) or the AITER path, never the fused op, so such rows are not accepted as kernel timings;
+    'none' when the layer has no rope; 'unknown' otherwise.
+    """
+    if rotary_emb is None:
+        return "none"
+    if isinstance(rotary_emb, RotaryEmbedding):
+        return "vllm_kernel" if _fused_rope_kernel_available() else "torch_fallback"
+    if type(rotary_emb).__module__.startswith("vllm."):
+        method = getattr(getattr(rotary_emb, "_forward_method", None), "__name__", "forward")
+        return f"vllm_object_{method}"
+    return "unknown"
 
 
 class RotaryEmbedding(nn.Module):
@@ -252,6 +271,7 @@ class RotaryEmbedding(nn.Module):
                 cos,
                 sin,
                 self.is_neox_style,
+                head_size=self.head_size,
             )
             return query, key
 
@@ -573,7 +593,11 @@ def get_rope(
         dtype=rope_dtype,
     )
 
-    if not _should_prefer_torch_rope_fallback():
+    # Prefer this module's classes with the fused vLLM custom op: on ROCm, vLLM's own RotaryEmbedding dispatches forward_hip ->
+    # forward_native (17 torch kernels, 45-160 us) unless AITER is enabled, and never calls the fused rotary_embedding op; our
+    # class calls it directly (one kernel, 2.7-28 us on MI355X - the same kernel family SGLang launches). vLLM's factory is used
+    # only when the fused op is missing but vLLM imports (numerically correct, slow), and the torch fallback when neither imports.
+    if not _should_prefer_torch_rope_fallback() and _load_vllm_custom_ops() is None:
         vllm_get_rope = _load_vllm_get_rope()
         if vllm_get_rope is not None:
             return vllm_get_rope(

@@ -1,7 +1,7 @@
 """Sanity-check a Qwen3-30B-A3B MI355X dataset dir (plan Step 4).
 
 Usage: sanity_check.py <dir> [--max-seq-len 16384] [--cells <dir holding the *_aiter_block{1,16}.csv files, default <dir>>]
-                         [--tokens-grid "<python expr>"] [--allow-legacy-schema]
+                         [--tokens-grid "<python expr>"] [--allow-legacy-schema] [--allow-rope-fallback]
 The attention trio is checked when attention.csv exists and linear_op.csv when it exists (a run folder may hold only one).
 linear_op.csv must carry the two-column timing schema (time_stats.* GPU-bound + time_stats_hostbound.* legacy, produced only by
 --profile_method cuda_event; see 07_post_proj_rope_dip_root_cause.md / 08_) unless --allow-legacy-schema is given (pre-2026-09-17
@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # run by path with
 from frontier.profiling.utils import get_attention_input_combinations, get_num_tokens_to_profile, get_true_mixed_attention_input_combinations
 
 if len(sys.argv) < 2 or sys.argv[1].startswith("-"):  # the dataset path is positional; an option in its place once produced a vacuous PASS
-    sys.exit(f"usage: sanity_check.py <dataset-dir> [--max-seq-len N] [--cells DIR] [--tokens-grid '[..]'] [--allow-legacy-schema]; got {sys.argv[1:]}")
+    sys.exit(f"usage: sanity_check.py <dataset-dir> [--max-seq-len N] [--cells DIR] [--tokens-grid '[..]'] [--allow-legacy-schema] [--allow-rope-fallback]; got {sys.argv[1:]}")
 d = Path(sys.argv[1]); fails, notes = [], []
 if not d.is_dir():
     sys.exit(f"FAIL: dataset dir does not exist: {d}")
@@ -23,6 +23,8 @@ MSL = int(sys.argv[sys.argv.index("--max-seq-len") + 1]) if "--max-seq-len" in s
 cells = Path(sys.argv[sys.argv.index("--cells") + 1]) if "--cells" in sys.argv else d  # per-block cell files may sit in a run folder
 TOKENS_GRID = set(ast.literal_eval(sys.argv[sys.argv.index("--tokens-grid") + 1])) if "--tokens-grid" in sys.argv else None  # a literal list, e.g. "[1,8,64]"
 ALLOW_LEGACY = "--allow-legacy-schema" in sys.argv
+ALLOW_ROPE_FALLBACK = "--allow-rope-fallback" in sys.argv
+ROPE_IMPL_COLUMN = "attn_rope_impl"  # per-row: vllm_kernel | torch_fallback | vllm_object_<method> | none | unknown; only the fused kernel is a RoPE timing (11_attn_rope_task.md)
 GEMM_SCOPES = ("attn_pre_proj", "attn_post_proj", "mlp_up_proj", "mlp_down_proj")  # the <= 1.05 gate is for GEMM scopes only (norm scopes reach 1.069, rope 1.057)
 # Same values as linear_op_wrapper.BACKLOG_COVERAGE_FACTOR / the handoff's 1.05 gate; duplicated so this checker never imports torch.
 BACKLOG_COVERAGE_FACTOR, GPU_BOUND_MAX_OVER_LEGACY = 3.0, 1.05
@@ -148,6 +150,17 @@ if (d / "linear_op.csv").exists():
     notes.append(f"linear_op: {lin.num_tokens.nunique()} token values x 4 TP = {len(lin)} rows")
     ok(lin[lin.num_tensor_parallel_workers > 1]["time_stats.emb.median"].isna().all() and lin[lin.num_tensor_parallel_workers == 1]["time_stats.emb.median"].notna().all(),
        "linear_op: emb must be recorded on TP=1 rows only (replicated ops are split to TP=1)")
+    # attn_rope implementation: rows timed with the torch fallback are not RoPE timings (REQ-1 of the recollection plan)
+    if ROPE_IMPL_COLUMN in lin:
+        missing_impl = lin[ROPE_IMPL_COLUMN].isna()
+        ok(not missing_impl.any(), f"linear_op: {ROPE_IMPL_COLUMN} missing on {int(missing_impl.sum())} row(s) (merged with a pre-rope-fix run?)")
+        fb = ~missing_impl & ~lin[ROPE_IMPL_COLUMN].astype(str).isin(["vllm_kernel", "none"])  # torch_fallback, vllm_object_* (ROCm torch dispatch), unknown
+        if fb.any() and ALLOW_ROPE_FALLBACK:
+            notes.append(f"linear_op: {int(fb.sum())} rope fallback rows accepted (--allow-rope-fallback)")
+        else:
+            ok(not fb.any(), f"linear_op: attn_rope not timed with the fused kernel on {int(fb.sum())} row(s) (values {sorted(lin.loc[fb, ROPE_IMPL_COLUMN].astype(str).unique())}); pass --allow-rope-fallback to accept")
+    else:
+        notes.append("linear_op: attn_rope implementation not recorded (pre-rope-fix run); every run before 2026-09-17 used the torch fallback")
     # two-column timing schema (GPU-bound time_stats.* + legacy time_stats_hostbound.*) and its hard gates
     # a signature column counts only if it carries a value: non-cuda_event runs of the same wrapper write the four backlog/host-wall
     # scalars as all-NaN headers (their dict-valued fields expand to no columns), and those runs are legacy-schema by design

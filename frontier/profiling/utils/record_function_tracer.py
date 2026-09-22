@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 from collections.abc import Collection
 from typing import Optional, Set
@@ -17,7 +18,12 @@ class RecordFunctionTracer:
         output_path: str,
         allow_zero_cuda_ops: Optional[Set[str]] = None,
         fail_on_zero_cuda_time: bool = True,
+        keep_trace: bool = True,
     ):
+        # keep_trace=False deletes the chrome trace after a SUCCESSFUL get_operation_time_stats(): one trace per profiled
+        # shape is ~4.9 MB (2026-09-17 measurement), ~65 GB for a dense linear_op grid. Only LinearOpWrapper opts in; the
+        # attention/MoE profilers keep the default. On a parse error the file stays (the error message cites its path).
+        self.keep_trace = keep_trace
         trace_id = str(uuid.uuid4())[:8]
         self.trace_path = (
             f"{output_path}/profiler_traces/profiler_trace_{trace_id}.json"
@@ -145,7 +151,7 @@ class RecordFunctionTracer:
         if debug:
             print(f"[DEBUG] Collected operations: {list(per_operation_times_ms.keys())}")
 
-        return {
+        stats = {
             operation: {
                 "min": np.min(times),
                 "max": np.max(times),
@@ -156,3 +162,9 @@ class RecordFunctionTracer:
             }
             for operation, times in per_operation_times_ms.items()
         }
+        if not self.keep_trace:
+            try:
+                os.remove(self.trace_path)
+            except OSError as exc:  # cleanup must never fail a measurement (e.g. permissions on a root-squashed NFS tree)
+                print(f"[WARNING] RecordFunctionTracer: could not remove trace {self.trace_path}: {exc}")
+        return stats

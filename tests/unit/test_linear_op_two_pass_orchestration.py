@@ -143,6 +143,21 @@ def row(device, tmp_path):
 
 # ---------------------------------------------------------------- profile(): two passes, schema, flags
 
+def test_row_reports_attn_rope_impl_none_for_a_model_without_rope(row):
+    assert row["attn_rope_impl"] == "none"  # the fake model has no rotary_emb
+
+
+def test_find_rotary_emb_walks_module_tree_and_plain_objects():
+    class _Rope(torch.nn.Module):
+        pass
+
+    inner = torch.nn.Module(); inner.rotary_emb = _Rope()
+    outer = torch.nn.Module(); outer.block = inner
+    assert low._find_rotary_emb(outer) is inner.rotary_emb
+    assert low._find_rotary_emb(SimpleNamespace(rotary_emb="x")) == "x"
+    assert low._find_rotary_emb(lambda *a: None) is None
+
+
 def test_two_passes_share_warmup_and_timed_counts(row):
     for op in LEGACY_MS:
         for col in (row["time_stats"], row["time_stats_hostbound"]):
@@ -171,8 +186,10 @@ def test_legacy_host_bound_flag_set_for_one_op_only(row):
     assert row["legacy_host_bound"] == {"attn_post_proj": True, "attn_rope": False}
 
 
-def test_backlog_enqueued_once_and_only_in_second_pass(row, device):
-    assert len(device.spin_calls) == 1  # calibration skipped (module constant set), spin only before pass-2 timed loop
+def test_backlog_enqueued_per_block_and_only_in_second_pass(row, device):
+    # 50 timed forwards = 2 blocks of BACKLOG_BLOCK_STEPS (25), one spin before each; calibration skipped (module constant set);
+    # no spin in the legacy pass. The HIP queue holds ~25 forwards of launches, hence the block size (09_ s3a).
+    assert low.BACKLOG_BLOCK_STEPS == 25 and len(device.spin_calls) == 2
     # legacy pass: 3 warm-up + 50 timed forwards, all at legacy durations; gpu-bound pass: warm-ups still legacy (spin
     # not yet enqueued), the 50 timed forwards at kernel durations.
     samples_legacy = _samples(row["time_stats_hostbound"]["attn_post_proj"])
@@ -197,16 +214,25 @@ def test_requested_backlog_honours_env_override(device, tmp_path, monkeypatch):
     monkeypatch.setattr(low, "_GPU_BACKLOG_MS", 123.0)  # what FRONTIER_GPU_BACKLOG_MS=123 sets at import
     out = _build_wrapper(device, "cuda_event", tmp_path).profile(64)
     assert out["gpu_backlog_ms"] == 123.0
-    assert device.spin_calls == [int(123.0 * _STALE_CYCLES_PER_MS)]
+    assert device.spin_calls == [int(123.0 / 2 * _STALE_CYCLES_PER_MS)] * 2  # the requested total is split over the 2 blocks
 
 
 def test_actual_backlog_is_event_measured_and_refits_calibration(row, device):
-    (cycles,) = device.spin_calls
-    assert cycles == int(row["gpu_backlog_ms"] * _STALE_CYCLES_PER_MS)
-    expected_actual = cycles / _DEVICE_CYCLES_PER_MS  # the spin under-delivers by 20 % against the stale calibration
+    cycles_per_block = device.spin_calls
+    assert cycles_per_block == [int(row["gpu_backlog_ms"] / 2 * _STALE_CYCLES_PER_MS)] * 2
+    expected_actual = sum(cycles_per_block) / _DEVICE_CYCLES_PER_MS  # sum over blocks; each under-delivers by 20 % vs the stale calibration
     assert row["gpu_backlog_ms_actual"] == pytest.approx(expected_actual)
     assert row["gpu_backlog_ms_actual"] == pytest.approx(0.8 * row["gpu_backlog_ms"], rel=1e-3)  # int() truncation of cycles
     assert low._SLEEP_CYCLES_PER_MS == pytest.approx(_DEVICE_CYCLES_PER_MS)  # re-fitted from the measured spin
+
+
+def test_blocks_cover_every_timed_forward_for_uneven_counts(device, tmp_path, monkeypatch):
+    # 60 forwards -> 3 blocks (25, 25, 10), one spin each; the stats still hold all 60 samples
+    monkeypatch.setattr(low, "ACTIVE_STEPS", 60)
+    out = _build_wrapper(device, "cuda_event", tmp_path).profile(64)
+    assert len(device.spin_calls) == 3
+    assert out["time_stats"]["attn_post_proj"]["count"] == 60 and out["time_stats_hostbound"]["attn_post_proj"]["count"] == 60
+    assert len(_samples(out["time_stats"]["attn_post_proj"])) == 63  # 3 warm-up + 60 timed
 
 
 def test_timer_store_cleared_after_profile(row):
@@ -250,7 +276,7 @@ def test_profile_calibrates_once_across_tasks(device, tmp_path, monkeypatch):
     wrapper = _build_wrapper(device, "cuda_event", tmp_path)
     wrapper.profile(64)
     wrapper.profile(128)
-    assert len(device.spin_calls) == 4 and device.spin_calls[:2] == [20_000_000, 20_000_000]  # 2 calibration spins once + 1 spin per task
+    assert len(device.spin_calls) == 6 and device.spin_calls[:2] == [20_000_000, 20_000_000]  # 2 calibration spins once + 2 block spins per task
 
 
 # ---------------------------------------------------------------- _timed_pass directly
@@ -290,8 +316,9 @@ def test_timed_pass_records_spike_diag_hooks_when_enabled(device, tmp_path, monk
 class _FakeTracer:
     created = []
 
-    def __init__(self, output_dir):
+    def __init__(self, output_dir, **kwargs):
         self.output_dir = output_dir
+        self.kwargs = kwargs
         _FakeTracer.created.append(self)
 
     def __enter__(self):

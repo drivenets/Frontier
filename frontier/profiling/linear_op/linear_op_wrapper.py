@@ -23,10 +23,15 @@ from frontier.profiling.utils import (
     build_profile_position_indices,
     normalize_profile_method,
 )
+from frontier.profiling.common.layers.rotary_embedding import rope_impl_name
 from frontier.profiling.utils.record_function_tracer import RecordFunctionTracer
 
 WARMUP_STEPS = 3
-ACTIVE_STEPS = int(os.environ.get("FRONTIER_LINEAR_ACTIVE_STEPS", "50"))  # override only for the spike experiments
+ACTIVE_STEPS = int(os.environ.get("FRONTIER_LINEAR_ACTIVE_STEPS", "50"))  # timed forwards per shape (200 for the 2026-09-22 dense runs)
+# The spin keeps the device behind the host only for as many launches as the HIP command queue holds: with 50 forwards behind one spin
+# the queue filled at small shapes and the device caught the host before the loop ended (09_ s3a; closure 0.74-0.91), with 25 it closed
+# to 0.97-0.99. So the GPU-bound loop is split into blocks of BACKLOG_BLOCK_STEPS forwards, each preceded by its own spin.
+BACKLOG_BLOCK_STEPS = int(os.environ.get("FRONTIER_LINEAR_BACKLOG_BLOCK_STEPS", "25"))
 
 # Two-column op timing (profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/07_post_proj_rope_dip_root_cause.md, validated in 08_).
 # A CUDA-event scope in the un-synchronised 50-forward loop measures the host's launch span, not the kernel, whenever the
@@ -56,6 +61,21 @@ def _sclk_probe_mhz() -> float:
     torch.cuda.synchronize()
     elapsed_us = start.elapsed_time(end) * 1e3
     return PROBE_CYCLES / elapsed_us if elapsed_us > 0 else float("nan")
+
+
+def _find_rotary_emb(model):
+    """The rope object the profiled model calls (an attention layer's `rotary_emb`), or None.
+
+    Walks an nn.Module tree; for a plain object returns its `rotary_emb` attribute; callables/other objects -> None.
+    """
+    modules = getattr(model, "modules", None)
+    if callable(modules):
+        for module in modules():
+            rope = getattr(module, "rotary_emb", None)
+            if rope is not None:
+                return rope
+        return None
+    return getattr(model, "rotary_emb", None)
 
 
 def _empty_two_pass_fields() -> dict:
@@ -214,7 +234,6 @@ class LinearOpWrapper:
         self.timer_stats_store.clear_stats()
         diag = spike_diag.enabled
         span_timer = CudaTimer(FORWARD_SPAN_SCOPE) if record_forward_span else nullcontext()
-        backlog_events = None
         torch.cuda.synchronize()  # drain the input-construction kernels so warm-up starts on an idle device
         # Keep CPython's cyclic GC out of the timed region: a gen-2 collection on this thread lands between a
         # CudaTimer start event and the kernel launch and shows up as a 150-290 ms sample
@@ -233,17 +252,20 @@ class LinearOpWrapper:
             torch.cuda.synchronize()
             self.timer_stats_store.mark_warmup_end()
             sclk_start = _sclk_probe_mhz()  # immediately before the timed loop, device idle after the synchronize
-            if backlog_ms > 0:
-                backlog_events = _enqueue_gpu_backlog(backlog_ms)
+            blocks = -(-ACTIVE_STEPS // BACKLOG_BLOCK_STEPS) if backlog_ms > 0 else 1  # legacy pass: one block, no spin
+            backlog_events = []
             loop_t0 = time.perf_counter()
 
-            for _ in range(ACTIVE_STEPS):
-                if diag:
-                    spike_diag.forward_begin()
-                with span_timer:
-                    self.model(input_ids, positions)
-                if diag:
-                    spike_diag.forward_end()
+            for block in range(blocks):
+                if backlog_ms > 0:
+                    backlog_events.append(_enqueue_gpu_backlog(backlog_ms / blocks))  # re-arm the backlog before every block
+                for _ in range(min(BACKLOG_BLOCK_STEPS, ACTIVE_STEPS - block * BACKLOG_BLOCK_STEPS) if backlog_ms > 0 else ACTIVE_STEPS):
+                    if diag:
+                        spike_diag.forward_begin()
+                    with span_timer:
+                        self.model(input_ids, positions)
+                    if diag:
+                        spike_diag.forward_end()
 
             enqueue_ms = (time.perf_counter() - loop_t0) * 1e3  # host wall until the last forward's launch call returned (HIP may still buffer before queue insertion)
             torch.cuda.synchronize()
@@ -254,11 +276,12 @@ class LinearOpWrapper:
         sclk_end = _sclk_probe_mhz()
 
         backlog_actual_ms = 0.0
-        if backlog_events is not None:
-            start, end, cycles = backlog_events
-            backlog_actual_ms = float(start.elapsed_time(end))
-            if backlog_actual_ms > 0:
-                _SLEEP_CYCLES_PER_MS = cycles / backlog_actual_ms  # re-fit for the next task (clock drifts, see helper)
+        if backlog_events:
+            spins_ms = [float(start.elapsed_time(end)) for start, end, _ in backlog_events]
+            backlog_actual_ms = sum(spins_ms)  # total spin over all blocks; the coverage gate compares it with the whole legacy loop
+            start, end, cycles = backlog_events[-1]
+            if spins_ms[-1] > 0:
+                _SLEEP_CYCLES_PER_MS = cycles / spins_ms[-1]  # re-fit from the last (warmest) block for the next task
         return {
             "time_stats": self.timer_stats_store.get_stats(),
             "loop_wall_ms": loop_wall_ms,
@@ -299,7 +322,10 @@ class LinearOpWrapper:
 
             self.timer_stats_store.clear_stats()
 
-            record_function_tracer = RecordFunctionTracer(self.output_dir)
+            # traces are ~4.9 MB per shape; delete after parsing unless FRONTIER_RF_KEEP_TRACES=1 (kept for kernel-count checks)
+            record_function_tracer = RecordFunctionTracer(
+                self.output_dir, keep_trace=os.environ.get("FRONTIER_RF_KEEP_TRACES", "0").strip().lower() in {"1", "true", "yes", "on"}
+            )
 
             with record_function_tracer:
                 self.model(
@@ -349,6 +375,9 @@ class LinearOpWrapper:
             # host_enqueue_per_forward_ms{,_backlog} = host wall to the last launch / 50 (== wall when host-bound or queue-throttled);
             # sclk_mhz_{legacy,backlog}_{start,end} = shader-clock probe immediately before and after each timed loop.
             **two_pass_fields,
+            # which RoPE implementation attn_rope timed: vllm_kernel | torch_fallback | vllm_object_<method> | none | unknown
+            # (rotary_embedding.rope_impl_name; 11_attn_rope_task.md) - the checker accepts only vllm_kernel/none
+            "attn_rope_impl": rope_impl_name(_find_rotary_emb(self.model)),
             "n_head": self.model_config.num_q_heads,
             "n_kv_head": self.model_config.num_kv_heads,
             "n_embd": self.model_config.embedding_dim,

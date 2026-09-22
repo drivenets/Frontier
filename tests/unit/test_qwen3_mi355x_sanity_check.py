@@ -62,7 +62,7 @@ def _linear_row(t: int, tp: int) -> dict:
     """One linear_op row in the two-column timing schema (GPU-bound time_stats.* + legacy time_stats_hostbound.*);
     _legacy_schema() strips it down to the pre-2026-09-17 single-column layout."""
     row = {"n_head": 32, "n_kv_head": 4, "n_embd": 2048, "use_qk_norm": True, "num_tokens": t,
-           "num_tensor_parallel_workers": tp, "warmup_steps": 3, "active_steps": 50,
+           "num_tensor_parallel_workers": tp, "warmup_steps": 3, "active_steps": 50, "attn_rope_impl": "vllm_kernel",
            "time_stats.attn_pre_proj.median": t / 1000, "time_stats.attn_post_proj.median": t / 2000,
            "time_stats.emb.median": 0.1 if tp == 1 else float("nan")}
     row.update({"time_stats_hostbound.attn_pre_proj.median": t / 1000 * 1.5, "time_stats_hostbound.attn_post_proj.median": t / 2000 * 2.0,
@@ -227,6 +227,36 @@ def test_nan_probe_value_is_rejected(dataset: Path) -> None:
     result = _run(dataset)
     assert result.returncode != 0
     assert "FAIL: linear_op: clock-probe/enqueue columns with non-finite values (rows per column): {'sclk_mhz_backlog_start': 1}" in result.stdout, result.stdout
+
+
+def test_rope_fallback_row_fails_unless_allowed(dataset: Path) -> None:
+    # attn_rope timed with the torch fallback is a cost-model input for a computation that is not RoPE (11_attn_rope_task.md)
+    def poison(df):
+        df = df.copy(); df.loc[df.index[5], "attn_rope_impl"] = "torch_fallback"; df.loc[df.index[6], "attn_rope_impl"] = "vllm_object_forward_native"; return df
+    _rewrite(dataset, ("linear_op",), poison)
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert "FAIL: linear_op: attn_rope not timed with the fused kernel on 2 row(s) (values ['torch_fallback', 'vllm_object_forward_native'])" in result.stdout, result.stdout
+    result = _run(dataset, "--allow-rope-fallback")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "rope fallback rows accepted (--allow-rope-fallback)" in result.stdout
+
+
+def test_rope_impl_missing_on_some_rows_fails(dataset: Path) -> None:
+    def poison(df):
+        df = df.copy(); df.loc[df.index[2], "attn_rope_impl"] = float("nan"); return df
+    _rewrite(dataset, ("linear_op",), poison)
+    result = _run(dataset)
+    assert result.returncode != 0
+    assert "FAIL: linear_op: attn_rope_impl missing on 1 row(s)" in result.stdout, result.stdout
+
+
+def test_rope_impl_column_absent_is_noted(dataset: Path) -> None:
+    # runs before the rope fix have no attn_rope_impl column: still accepted, with a note
+    _rewrite(dataset, ("linear_op",), lambda df: df.drop(columns=["attn_rope_impl"]))
+    result = _run(dataset)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "attn_rope implementation not recorded (pre-rope-fix run)" in result.stdout
 
 
 def test_pre_probe_two_column_run_passes_with_a_note(dataset: Path) -> None:
