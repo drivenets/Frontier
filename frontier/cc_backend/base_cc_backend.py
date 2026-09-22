@@ -188,6 +188,7 @@ class BaseCCBackend(ABC):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-reduce communication time.
@@ -199,6 +200,13 @@ class BaseCCBackend(ABC):
             data_size_bytes: Size of data in bytes
             num_devices: Number of participating devices
             cluster_type: Optional cluster type for context-aware prediction
+            replica_id: Optional identity of the specific replica this call
+                prices, when more than one replica of the same pool shares
+                an identically-shaped group (e.g. two independent FFN
+                replicas at the same expert-parallel degree). Backends that
+                do not need placement identity may ignore it; a
+                placement-aware backend uses it to resolve which of
+                several same-shaped groups this call actually means.
 
         Returns:
             Predicted execution time in milliseconds
@@ -215,6 +223,7 @@ class BaseCCBackend(ABC):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-gather communication time.
@@ -226,6 +235,7 @@ class BaseCCBackend(ABC):
             data_size_bytes: Size of data per device in bytes
             num_devices: Number of participating devices
             cluster_type: Optional cluster type for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce`.
 
         Returns:
             Predicted execution time in milliseconds
@@ -242,6 +252,7 @@ class BaseCCBackend(ABC):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict broadcast communication time.
@@ -252,6 +263,7 @@ class BaseCCBackend(ABC):
             data_size_bytes: Size of data in bytes
             num_devices: Number of participating devices
             cluster_type: Optional cluster type for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce`.
 
         Returns:
             Predicted execution time in milliseconds
@@ -272,6 +284,10 @@ class BaseCCBackend(ABC):
         Predict point-to-point send/recv communication time.
 
         Send/recv is a point-to-point communication between two processes.
+        Not part of this signature change: a two-rank point-to-point
+        transfer carries no group-size ambiguity to disambiguate (Track B
+        Step 40's own scoping already excludes this method for that
+        reason).
 
         Args:
             data_size_bytes: Size of data in bytes
@@ -292,6 +308,7 @@ class BaseCCBackend(ABC):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict reduce-scatter communication time.
@@ -303,6 +320,7 @@ class BaseCCBackend(ABC):
             data_size_bytes: Size of data in bytes
             num_devices: Number of participating devices
             cluster_type: Optional cluster type for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce`.
 
         Returns:
             Predicted execution time in milliseconds
@@ -319,6 +337,7 @@ class BaseCCBackend(ABC):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-to-all communication time.
@@ -329,6 +348,7 @@ class BaseCCBackend(ABC):
             data_size_bytes: Total size of data in bytes
             num_devices: Number of participating devices
             cluster_type: Optional cluster type for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce`.
 
         Returns:
             Predicted execution time in milliseconds

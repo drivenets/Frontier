@@ -1311,6 +1311,21 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
             # Attention-only cluster
             return ExecutionTime(
                 num_layers_per_pipeline_stage=num_layers,
+                # Track B Step 53: `_predict_mla_attention_layer_time` (the
+                # branch DeepSeek's LATENT_MLA_ATTENTION_FAMILY takes) returns
+                # AttentionTime(operator_times=...) only -- the six attn_mla_*
+                # named fields are never set on it, so passing them through
+                # named kwargs below yields 0.0 for every MLA batch. Threading
+                # the same operator_times object here lets ExecutionTime's own
+                # existing merge (_merge_operator_time_sources ->
+                # execution_op_time_values_by_attr -> read_op_time_attr)
+                # populate attn_mla_kv_cache_save_time/attn_mla_prefill_kv_up_
+                # proj_time/attn_mla_prefill_time/attn_mla_decode_q_latent_
+                # proj_time/attn_mla_decode_time/attn_mla_v_up_proj_time from
+                # the real, already-computed values -- a no-op for dense
+                # (non-MLA) attention families, whose AttentionTime carries no
+                # operator_times at all.
+                attention_operator_times=attention_time.operator_times,
                 attention_rope_execution_time=self._predict_one_op_time(
                     "attention_rope_execution_time",
                     attention_time.attention_rope_execution_time,
@@ -1509,6 +1524,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                         num_devices=moe_tp_size,
                         cluster_type=cluster_type,
                         comm_domain="MOE_TP",
+                        replica_id=batch.replica_id,
                     )
                     if moe_time.share_expert_time > 0:
                         allreduce_bytes = quant_manager.adjust_tensor_size(
@@ -1519,6 +1535,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                             num_devices=moe_tp_size,
                             cluster_type=cluster_type,
                             comm_domain="MOE_TP",
+                            replica_id=batch.replica_id,
                         )
                         share_expert_tp_allreduce_time = self._apply_share_expert_tp_allreduce_overlap(
                             raw_share_expert_tp_allreduce_time
@@ -1860,6 +1877,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                         num_devices=moe_tp_size,
                         cluster_type=cluster_type,
                         comm_domain="MOE_TP",
+                        replica_id=batch.replica_id,
                     )
 
                 return ExecutionTime(
@@ -2276,6 +2294,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                         num_devices=moe_tp_size,
                         cluster_type=cluster_type,
                         comm_domain="MOE_TP",
+                        replica_id=batch.replica_id,
                     )
 
                     architecture_profile = self._resolve_model_architecture_profile_for_config(
@@ -2290,6 +2309,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                             num_devices=moe_tp_size,
                             cluster_type=cluster_type,
                             comm_domain="MOE_TP",
+                            replica_id=batch.replica_id,
                         )
                         if (
                             moe_time.share_expert_up_proj_time
@@ -2302,6 +2322,7 @@ class SklearnDisaggregationExecutionTimePredictor(SklearnMoEExecutionTimePredict
                                 num_devices=moe_tp_size,
                                 cluster_type=cluster_type,
                                 comm_domain="MOE_TP",
+                                replica_id=batch.replica_id,
                             )
                             share_expert_tp_allreduce_time = self._apply_share_expert_tp_allreduce_overlap(
                                 raw_share_expert_tp_allreduce_time

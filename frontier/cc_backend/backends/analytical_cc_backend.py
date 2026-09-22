@@ -116,6 +116,7 @@ class AnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-reduce time using ring algorithm model.
@@ -160,6 +161,7 @@ class AnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-gather time using ring algorithm model.
@@ -207,6 +209,7 @@ class AnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict broadcast time using tree algorithm model.
@@ -284,6 +287,7 @@ class AnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict reduce-scatter time using ring algorithm model.
@@ -328,6 +332,7 @@ class AnalyticalCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-to-all communication time.

@@ -45,6 +45,10 @@ from frontier.config import (
     get_quantization_manager,
 )
 from frontier.entities import Batch, Request
+from frontier.execution_time_predictor.replica_id_encoding import (
+    ATTN_DP_ENCODING_BASE,
+    encode_group_replica_id,
+)
 from frontier.entities.time_components import (
     AttentionTime,
     AttentionOperatorTimes,
@@ -156,6 +160,22 @@ def _get_operator_spec_by_name(family, op_name: str) -> OperatorSpec:
             f"{family.family_id!r}; found {len(matches)}"
         )
     return matches[0]
+
+
+# Track B Step 48: canonicalised into
+# `replica_id_encoding.encode_group_replica_id`, imported above -- this
+# used to be five independent inline copies of the same formula (this
+# file had four; `dc-sim`'s own `populate_from_deployment` had the
+# fifth), the exact condition ("independently-derived schemes agreeing
+# in whatever configuration someone tested") that produced both
+# replica-identity mismatches this track has chased. `batch.replica_id`
+# is global across every cluster/pool in the whole simulated deployment
+# (`BaseEntity.generate_id()`'s own shared per-subclass counter);
+# `batch.decode_attn_original_dp_id` is local to one replica's own DP
+# lanes. Kept as a local alias only because this file's own five call
+# sites already spell it this way; the canonical value and the guard
+# both live in `replica_id_encoding.py` now.
+_ATTN_DP_ENCODING_BASE = ATTN_DP_ENCODING_BASE
 
 
 class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
@@ -4574,6 +4594,15 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             ),
             is_moe=bool(is_moe),
         )
+        # Track B Step 41 correction: `replica_id` (copied above via the
+        # constructor) is constant across a decode-attn replica's own DP
+        # lanes -- see `base_replica_scheduler.py::_create_batch`, which
+        # sets `batch.replica_id = self._replica_id` (the Frontier Replica's
+        # own id) and, separately, `batch.decode_attn_original_dp_id =
+        # self._dp_id` (the actual per-lane id). Only the latter disambiguates
+        # same-shaped ATTN_TP groups from different DP lanes; carry it
+        # forward explicitly since `Batch.__init__` has no parameter for it.
+        synthetic_batch.decode_attn_original_dp_id = source_batch.decode_attn_original_dp_id
         if copy_spec_decode_metadata:
             metadata = getattr(source_batch, "spec_decode_metadata", None)
             if metadata is not None:
@@ -4863,6 +4892,12 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=attn_tp_size,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    synthetic_batch.replica_id, "ATTN_TP",
+                    synthetic_batch.decode_attn_original_dp_id,
+                ),
             )
 
         if contract.fusion_requires_allgather and attn_tp_size > 1:
@@ -4872,6 +4907,12 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=attn_tp_size,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    synthetic_batch.replica_id, "ATTN_TP",
+                    synthetic_batch.decode_attn_original_dp_id,
+                ),
             )
 
         if contract.lm_head_requires_allgather and attn_tp_size > 1:
@@ -4887,6 +4928,12 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=attn_tp_size,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    synthetic_batch.replica_id, "ATTN_TP",
+                    synthetic_batch.decode_attn_original_dp_id,
+                ),
             )
 
         return step_time_ms
@@ -5329,6 +5376,11 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=self._cluster_type,
                 comm_domain="ATTN_TP",
+                # Track B Step 48: canonical encoder -- see
+                # replica_id_encoding.py.
+                replica_id=encode_group_replica_id(
+                    batch.replica_id, "ATTN_TP", batch.decode_attn_original_dp_id,
+                ),
             )
             result = self._strip_collective_sim_allreduce_launch_overhead_if_needed(
                 batch=batch,
@@ -5418,6 +5470,13 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
         )
         data_size_bytes = operator.build_payload_bytes(ctx)
         num_devices = operator.num_devices(ctx)
+        # Track B Step 48: canonical encoder -- see replica_id_encoding.py.
+        # (ATTN_TP needs both batch.replica_id and the DP-lane id;
+        # everything else -- EP, MOE_TP -- differs only by Replica, so
+        # encode_group_replica_id returns batch.replica_id unchanged.)
+        replica_id = encode_group_replica_id(
+            batch.replica_id, operator.comm_domain, batch.decode_attn_original_dp_id,
+        )
 
         if operator.collective_alias == "allreduce":
             if num_devices is None:
@@ -5429,6 +5488,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=self._cluster_type,
                 comm_domain=operator.comm_domain,
+                replica_id=replica_id,
             )
             if operator.apply_allreduce_launch_overhead_strip:
                 if operator.comm_domain is None:
@@ -5456,6 +5516,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=self._cluster_type,
                 comm_domain=operator.comm_domain,
+                replica_id=replica_id,
             )
 
         if operator.collective_alias == "alltoall":
@@ -5468,6 +5529,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=self._cluster_type,
                 comm_domain=operator.comm_domain,
+                replica_id=replica_id,
             )
 
         if operator.collective_alias == "send_recv":
@@ -6878,6 +6940,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict tensor parallel all-reduce communication time.
@@ -6888,6 +6951,10 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             data_size_bytes: Size of data in bytes
             num_devices: Number of participating devices
             cluster_type: Type of cluster for context-aware prediction
+            replica_id: Optional identity of the specific replica this call
+                prices, when more than one replica of the same pool shares
+                an identically-shaped group. Forwarded to the CC backend
+                unchanged; backends that do not need it ignore it.
 
         Returns:
             Predicted execution time in milliseconds
@@ -6899,6 +6966,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=cluster_type,
                 comm_domain=comm_domain,
+                replica_id=replica_id,
             )
             logger.debug(
                 f"predict_allreduce_time: using CC Backend, "
@@ -6930,6 +6998,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict expert parallel all-gather communication time.
@@ -6940,6 +7009,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             data_size_bytes: Size of data per device in bytes
             num_devices: Number of participating devices
             cluster_type: Type of cluster for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce_time`.
 
         Returns:
             Predicted execution time in milliseconds
@@ -6951,6 +7021,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=cluster_type,
                 comm_domain=comm_domain,
+                replica_id=replica_id,
             )
             logger.debug(
                 f"predict_allgather_time: using CC Backend, "
@@ -6982,6 +7053,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict expert parallel all-to-all communication time.
@@ -6992,6 +7064,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             data_size_bytes: Total size of data in bytes
             num_devices: Number of participating devices
             cluster_type: Type of cluster for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce_time`.
 
         Returns:
             Predicted execution time in milliseconds
@@ -7003,6 +7076,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=cluster_type,
                 comm_domain=comm_domain,
+                replica_id=replica_id,
             )
             logger.debug(
                 f"predict_alltoall_time: using CC Backend, "

@@ -832,6 +832,7 @@ class VidurCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-reduce communication time using ML model.
@@ -939,6 +940,7 @@ class VidurCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-gather communication time.
@@ -983,6 +985,7 @@ class VidurCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict broadcast communication time.
@@ -1029,6 +1032,7 @@ class VidurCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict reduce-scatter communication time.
@@ -1071,6 +1075,7 @@ class VidurCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict all-to-all communication time.

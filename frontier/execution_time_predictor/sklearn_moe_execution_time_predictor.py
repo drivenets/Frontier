@@ -1594,6 +1594,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
                 num_devices=moe_tp_size,
                 cluster_type=self._cluster_type,
                 comm_domain="MOE_TP",
+                replica_id=batch.replica_id,
             )
             result = self._strip_collective_sim_allreduce_launch_overhead_if_needed(
                 batch=batch,
@@ -1677,6 +1678,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
                     num_devices=self._moe_ep_size,
                     cluster_type=self._cluster_type,
                     comm_domain="EP",
+                    replica_id=batch.replica_id,
                 )
                 logger.debug(
                     f"_get_expert_parallel_communication_time: using EP all-to-all, "
@@ -1696,6 +1698,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
                 num_devices=self._moe_ep_size,
                 cluster_type=self._cluster_type,
                 comm_domain="EP",
+                replica_id=batch.replica_id,
             )
             result = self._strip_collective_sim_allreduce_launch_overhead_if_needed(
                 batch=batch,
@@ -2499,6 +2502,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict expert parallel all-gather communication time.
@@ -2511,6 +2515,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
             data_size_bytes: Size of data per device in bytes
             num_devices: Number of participating devices
             cluster_type: Type of cluster for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce_time`.
 
         Returns:
             Predicted execution time in milliseconds
@@ -2522,6 +2527,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=cluster_type,
                 comm_domain=comm_domain,
+                replica_id=replica_id,
             )
             logger.debug(
                 f"predict_allgather_time (MoE): using CC Backend, "
@@ -2538,6 +2544,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
         num_devices: int,
         cluster_type: ClusterType,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         """
         Predict expert parallel all-to-all communication time.
@@ -2550,6 +2557,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
             data_size_bytes: Total size of data in bytes
             num_devices: Number of participating devices
             cluster_type: Type of cluster for context-aware prediction
+            replica_id: Optional replica identity -- see `predict_allreduce_time`.
 
         Returns:
             Predicted execution time in milliseconds
@@ -2561,6 +2569,7 @@ class SklearnMoEExecutionTimePredictor(SklearnExecutionTimePredictor):
                 num_devices=num_devices,
                 cluster_type=cluster_type,
                 comm_domain=comm_domain,
+                replica_id=replica_id,
             )
             logger.debug(
                 f"predict_alltoall_time (MoE): using CC Backend, "

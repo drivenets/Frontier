@@ -754,6 +754,7 @@ class CollectiveSimCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_num_devices(num_devices, "allreduce")
         if num_devices <= 1:
@@ -771,6 +772,7 @@ class CollectiveSimCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_num_devices(num_devices, "allgather")
         if num_devices <= 1:
@@ -788,6 +790,7 @@ class CollectiveSimCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         raise NotImplementedError(
             "collective-sim backend does not support broadcast prediction"
@@ -812,6 +815,7 @@ class CollectiveSimCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_num_devices(num_devices, "reduce_scatter")
         if num_devices <= 1:
@@ -831,6 +835,7 @@ class CollectiveSimCCBackend(BaseCCBackend):
         num_devices: int,
         cluster_type: Optional[ClusterType] = None,
         comm_domain: Optional[str] = None,
+        replica_id: Optional[int] = None,
     ) -> float:
         self._validate_num_devices(num_devices, "all_to_all")
         if num_devices <= 1:
