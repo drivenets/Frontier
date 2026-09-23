@@ -142,7 +142,7 @@ def main(argv=None) -> int:
     if a.smoke:
         grids = {k: v[:2] for k, v in grids.items()}
 
-    results, fold_rows, search_rows = [], [], []
+    results, fold_rows, search_rows, pred_frames = [], [], [], []
     t_start = time.time()
     for op, tp in keys:
         g = t[(t.op == op) & (t.tp == tp)].sort_values("num_tokens")
@@ -170,6 +170,7 @@ def main(argv=None) -> int:
                        n_train=len(y["train"]), n_test=len(y["test"]))
             for tier in score_tiers:
                 p = final.predict(X[tier])
+                pred_frames.append(pd.DataFrame(dict(tier=tier, op=op, tp=tp, model=model, num_tokens=tok[tier], y=y[tier], pred=p)))
                 cliff = in_cliff(tok[tier])
                 floor = y[tier] >= INSTRUMENT_FLOOR_MS
                 row[f"{tier}_mape"] = mape(y[tier], p)
@@ -188,6 +189,7 @@ def main(argv=None) -> int:
         pd.DataFrame(results).to_csv(out / "results.csv", index=False)
         pd.DataFrame(fold_rows).to_csv(out / "cv_folds.csv", index=False)
         pd.DataFrame(search_rows).to_csv(out / "search.csv", index=False)
+        pd.concat(pred_frames, ignore_index=True).to_csv(out / "test_predictions.csv", index=False)
 
     meta = dict(csv=str(a.csv), csv_md5=md5_of(Path(a.csv)), splits=str(a.splits), geometry="random", n_folds=N_FOLDS,
                 fold_seed=FOLD_SEED, es_seed=ES_SEED, es_frac=ES_FRAC, es_rounds=ES_ROUNDS, rf_grid_size=len(RF_GRID),
