@@ -1,5 +1,9 @@
 # Run 2026-09-15 13:15 — attention, AITER, 64k context, blocks 1 and 16
 
+> **Data location (moved 2026-09-23).** The CSVs of this run are not in git. They live on the shared filesystem at
+> `/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/attention/2026-09-15_1315_attention_64k/` with `SHA256SUMS` and a copy of this file;
+> this RUN.md is the pointer. The dataset README's runs index lists the same path.
+
 Jobs: 21316 (block 16, `amd-mi355x-9`, 13:15:53–13:37:46) and 21317 (block 1, `amd-mi355x-9`, 13:37:46–13:59:54).
 Image `lmsysorg/sglang:v0.5.17-rocm720-mi35x`. Code `da1ae75` + sbatch env overrides (committed in `7f4dfa5`).
 

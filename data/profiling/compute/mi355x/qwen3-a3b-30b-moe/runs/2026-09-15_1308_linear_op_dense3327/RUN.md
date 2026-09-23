@@ -1,5 +1,9 @@
 # Run 2026-09-15 13:08 — linear ops, dense 3,327-token grid
 
+> **Data location (moved 2026-09-23).** The CSVs of this run are not in git. They live on the shared filesystem at
+> `/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327/` with `SHA256SUMS` and a copy of this file;
+> this RUN.md is the pointer. The dataset README's runs index lists the same path.
+
 Job 21313, `amd-mi355x-9`, 13:08:59–13:11:01. Image `lmsysorg/sglang:v0.5.11-rocm700-mi35x`. Code `da1ae75` (+ sbatch knob
 `LINEAR_TOKENS_PY`, committed in `7f4dfa5`).
 

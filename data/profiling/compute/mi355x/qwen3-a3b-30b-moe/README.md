@@ -7,6 +7,11 @@ head_dim 128, hidden 2048, 48 layers, BF16). Plan, run record and sanity script 
 
 ## 1. Layout — canonical files vs runs
 
+**Where the data lives (convention from 2026-09-22).** Large CSVs are not committed. They live on the shared filesystem under
+`/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/<linear_op|attention>/<run-name>/`, each with a `README.md`
+(copy of the run's RUN.md) and `SHA256SUMS`. A run dir here that holds only a `RUN.md` is a pointer to that location. Files still
+tracked in git (the root trio, the 16k attention run, the small validation grids) predate the convention and are left as they are.
+
 ```
 qwen3-a3b-30b-moe/
 ├── attention.csv, attention_true_mixed.csv, attention_combined.csv   canonical AITER attention data (16k context)
@@ -24,9 +29,9 @@ Never analyse a run folder without reading its `RUN.md` first: some folders are 
 | `runs/legacy_pre-2026-09_torch-sdpa/` | TORCH_SDPA attention (block 16, 9.4k ctx, 5 reps), linear_op ≤4096 tokens (20 reps), `moe.csv` | **old — do not use** |
 | `runs/2026-09-15_1142_attention_16k/` | AITER attention, 16k, blocks 1 and 16, per-block files | **canonical**: root `attention*.csv` = block1 ∪ block16 |
 | `runs/2026-09-15_1142_linear_op_grid386/` | linear ops, 386-token default grid | superseded by the dense run; kept for comparison |
-| `runs/2026-09-15_1308_linear_op_dense3327/` | linear ops, dense 3,327-token grid | root `linear_op.csv`; **superseded 2026-09-22** (host-bound at TP>1 below ~5k tokens, `attn_rope` = wrong torch fallback, GC spike on 32 rows — `12_dip_investigation_summary.md`); kept unchanged as the pre-fix record |
-| `runs/2026-09-15_1315_attention_32k/` | AITER attention, 32k, blocks 1 and 16, per-block files + union trio | validated (sanity PASS); not merged into root |
-| `runs/2026-09-15_1315_attention_64k/` | AITER attention, 64k, blocks 1 and 16, per-block files + union trio | validated (sanity PASS); not merged into root |
+| `runs/2026-09-15_1308_linear_op_dense3327/` (pointer only; CSV on `/opt/shared/frontier-qwen3-profiling/datasets/…/linear_op/…`) | linear ops, dense 3,327-token grid | root `linear_op.csv`; **superseded 2026-09-22** (host-bound at TP>1 below ~5k tokens, `attn_rope` = wrong torch fallback, GC spike on 32 rows — `12_dip_investigation_summary.md`); kept unchanged as the pre-fix record |
+| `runs/2026-09-15_1315_attention_32k/` (pointer only; CSVs on `/opt/shared/frontier-qwen3-profiling/datasets/…/attention/…`) | AITER attention, 32k, blocks 1 and 16, per-block files + union trio | validated (sanity PASS); not merged into root |
+| `runs/2026-09-15_1315_attention_64k/` (pointer only; CSVs on `/opt/shared/frontier-qwen3-profiling/datasets/…/attention/…`) | AITER attention, 64k, blocks 1 and 16, per-block files + union trio | validated (sanity PASS); not merged into root |
 | `runs/2026-09-15_1359_linear_op_spike_repro/` | 26 token values around the spike, 3 runs | diagnostic only |
 | `runs/2026-09-16_0629_linear_op_dense3327_rerun/` | dense grid again, same command, node 8 | validated (sanity PASS); **spike reproduced exactly** → independent replicate, root file unchanged |
 | `runs/2026-09-17_0846_linear_op_validation_grid_two_column/` | linear ops, 8-token validation grid × TP {1,2,4,8}, **two timing columns** (legacy + GPU-bound), see §5b | validated (`sanity_check.py --tokens-grid` PASS); first two-column output; **no clock probe** — superseded by the 10:16 run |
