@@ -32,6 +32,21 @@ ACTIVE_STEPS = int(os.environ.get("FRONTIER_LINEAR_ACTIVE_STEPS", "50"))  # time
 # the queue filled at small shapes and the device caught the host before the loop ended (09_ s3a; closure 0.74-0.91), with 25 it closed
 # to 0.97-0.99. So the GPU-bound loop is split into blocks of BACKLOG_BLOCK_STEPS forwards, each preceded by its own spin.
 BACKLOG_BLOCK_STEPS = int(os.environ.get("FRONTIER_LINEAR_BACKLOG_BLOCK_STEPS", "25"))
+# Backlog kind (13_run_position_anomalies_root_cause.md, Effect 1). The single-wave torch.cuda._sleep spin leaves the device in
+# a low-activity DPM state and the 25 forwards after it run 2-8 % slow with a monotone within-block ramp (shader clock 2290 ->
+# 2330 MHz over ~10-15 forwards, plus a slower domain the probe cannot see); 10 untimed forwards after the spin did not remove
+# it (job 21513). A chain of real GEMMs of the same length keeps the clocks up and gives a flat position profile (jobs 21494),
+# so "gemm" is the default; "sleep" keeps the old spin. The GEMM chain evicts the weights from the caches, so every spun block
+# starts with SETTLE_STEPS untimed forwards (timers paused: no event records, no samples) before the timed ones.
+# Kinds: "sleep" = the single-wave spin; "gemm" = 4096^2 bf16 GEMMs into a preallocated output (~0.13 ms each, full power);
+# "gemm_alloc" = the same GEMMs allocating their output; "stream" = elementwise add over 1 GB bf16 operands (~0.6 ms each,
+# memory-bound, few packets). Job 21517: gemm_alloc + 3 settle forwards gives a flat position profile at every shape with medians
+# at the settled value (1-5 % below the spin), stream leaves small kernels ~4 % slow, sleep drifts: gemm_alloc is the default.
+BACKLOG_KIND = os.environ.get("FRONTIER_GPU_BACKLOG_KIND", "gemm_alloc")
+SETTLE_STEPS = int(os.environ.get("FRONTIER_LINEAR_SETTLE_STEPS", "3"))
+_GEMM_BACKLOG = {}  # operands and the fitted ms per call (re-fitted from every delivered backlog like _SLEEP_CYCLES_PER_MS)
+GEMM_BACKLOG_N = 4096  # 4096^2 bf16 GEMM: ~0.13 ms on MI355X, 3 x 32 MB
+STREAM_BACKLOG_ELEMS = 512 * 1024 * 1024  # 1 GB bf16 per operand; add reads 2 GB + writes 1 GB: ~0.6 ms at ~5 TB/s
 
 # Two-column op timing (profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/07_post_proj_rope_dip_root_cause.md, validated in 08_).
 # A CUDA-event scope in the un-synchronised 50-forward loop measures the host's launch span, not the kernel, whenever the
@@ -89,8 +104,59 @@ def _empty_two_pass_fields() -> dict:
     }
 
 
+def _backlog_call():
+    """One unit of backlog work of the configured kind (device work only, no allocation for gemm/stream)."""
+    g = _GEMM_BACKLOG
+    if BACKLOG_KIND == "gemm":
+        torch.matmul(g["a"], g["b"], out=g["c"])
+    elif BACKLOG_KIND == "gemm_alloc":
+        torch.matmul(g["a"], g["b"])
+    else:  # stream
+        torch.add(g["a"], g["b"], out=g["c"])
+
+
+def _enqueue_work_backlog(ms: float) -> "tuple[torch.cuda.Event, torch.cuda.Event, int]":
+    """Enqueue ~`ms` of back-to-back work kernels (BACKLOG_KIND gemm | gemm_alloc | stream) on the current stream; the caller
+    has synchronised, so the device is idle.
+
+    Returns (start_event, end_event, n_calls); the caller reads start.elapsed_time(end) after its trailing synchronize and
+    re-fits _GEMM_BACKLOG["ms_per_call"] from it. First use: allocate, 20 warm-up calls (hipBLASLt solution selection, cold
+    clock), then fit from 50 timed calls.
+    """
+    if not _GEMM_BACKLOG:
+        if BACKLOG_KIND == "stream":
+            _GEMM_BACKLOG["a"] = torch.ones(STREAM_BACKLOG_ELEMS, device="cuda", dtype=torch.bfloat16)
+            _GEMM_BACKLOG["b"] = torch.ones(STREAM_BACKLOG_ELEMS, device="cuda", dtype=torch.bfloat16)
+            _GEMM_BACKLOG["c"] = torch.empty(STREAM_BACKLOG_ELEMS, device="cuda", dtype=torch.bfloat16)
+        else:
+            n = GEMM_BACKLOG_N
+            _GEMM_BACKLOG["a"] = torch.randn(n, n, device="cuda", dtype=torch.bfloat16)
+            _GEMM_BACKLOG["b"] = torch.randn(n, n, device="cuda", dtype=torch.bfloat16)
+            _GEMM_BACKLOG["c"] = torch.empty(n, n, device="cuda", dtype=torch.bfloat16)
+        for _ in range(20):
+            _backlog_call()
+        torch.cuda.synchronize()
+        start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+        start.record()
+        for _ in range(50):
+            _backlog_call()
+        end.record()
+        torch.cuda.synchronize()
+        _GEMM_BACKLOG["ms_per_call"] = start.elapsed_time(end) / 50
+        print(f"[gpu_backlog] pid={os.getpid()} {BACKLOG_KIND} ms_per_call={_GEMM_BACKLOG['ms_per_call']:.4f}", flush=True)
+    calls = max(1, int(round(ms / _GEMM_BACKLOG["ms_per_call"])))
+    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    start.record()  # the GPU is idle here (caller synchronised), so this stamps at enqueue time
+    for _ in range(calls):
+        _backlog_call()
+    end.record()    # stamps when the chain finishes; read after the caller's trailing synchronize
+    return start, end, calls
+
+
 def _enqueue_gpu_backlog(ms: float) -> "tuple[torch.cuda.Event, torch.cuda.Event, int]":
-    """Enqueue a GPU spin of ~`ms` on the current stream (caller has synchronised, so the device is idle).
+    """Enqueue a GPU backlog of ~`ms` on the current stream: work kernels (BACKLOG_KIND stream | gemm | gemm_alloc) or the legacy _sleep spin.
+
+    The spin variant (caller has synchronised, so the device is idle):
 
     Returns (start_event, end_event, cycles); the caller reads start.elapsed_time(end) after its trailing synchronize
     and re-fits _SLEEP_CYCLES_PER_MS from it. torch.cuda._sleep counts device cycles, so the delivered length depends on
@@ -98,6 +164,8 @@ def _enqueue_gpu_backlog(ms: float) -> "tuple[torch.cuda.Event, torch.cuda.Event
     calibration therefore spins twice and fits from the second (warmer-clock) spin, and every later spin re-fits it.
     """
     global _SLEEP_CYCLES_PER_MS
+    if BACKLOG_KIND != "sleep":
+        return _enqueue_work_backlog(ms)
     if _SLEEP_CYCLES_PER_MS is None:
         torch.cuda.synchronize()
         for _ in range(2):  # first spin ramps the clock, second is the one we fit
@@ -225,7 +293,8 @@ class LinearOpWrapper:
         the shader-clock probes.
 
         Order: synchronize -> warm-up -> synchronize -> mark_warmup_end -> clock probe (sclk_mhz_start: the clock the timed
-        loop starts at, after warm-up) -> [spin enqueued on the stream] -> timed forwards -> host enqueue timestamp ->
+        loop starts at, after warm-up) -> [backlog (GEMM chain or spin) enqueued on the stream -> SETTLE_STEPS untimed forwards] -> timed forwards ->
+        host enqueue timestamp ->
         synchronize -> clock probe (sclk_mhz_end). The probes use bare events, never CudaTimer, and sit outside every scope;
         the spin precedes every timed start event. TimerStatsStore arithmetic is untouched: get_stats() takes the median
         over the same 50 timed runs.
@@ -259,6 +328,12 @@ class LinearOpWrapper:
             for block in range(blocks):
                 if backlog_ms > 0:
                     backlog_events.append(_enqueue_gpu_backlog(backlog_ms / blocks))  # re-arm the backlog before every block
+                    self.timer_stats_store.pause()  # settle: refill the caches after the backlog before timing
+                    try:
+                        for _ in range(SETTLE_STEPS):
+                            self.model(input_ids, positions)
+                    finally:
+                        self.timer_stats_store.resume()
                 for _ in range(min(BACKLOG_BLOCK_STEPS, ACTIVE_STEPS - block * BACKLOG_BLOCK_STEPS) if backlog_ms > 0 else ACTIVE_STEPS):
                     if diag:
                         spike_diag.forward_begin()
@@ -281,7 +356,10 @@ class LinearOpWrapper:
             backlog_actual_ms = sum(spins_ms)  # total spin over all blocks; the coverage gate compares it with the whole legacy loop
             start, end, cycles = backlog_events[-1]
             if spins_ms[-1] > 0:
-                _SLEEP_CYCLES_PER_MS = cycles / spins_ms[-1]  # re-fit from the last (warmest) block for the next task
+                if BACKLOG_KIND != "sleep":
+                    _GEMM_BACKLOG["ms_per_call"] = spins_ms[-1] / cycles  # re-fit ms per work call from the last block
+                else:
+                    _SLEEP_CYCLES_PER_MS = cycles / spins_ms[-1]  # re-fit from the last (warmest) block for the next task
         return {
             "time_stats": self.timer_stats_store.get_stats(),
             "loop_wall_ms": loop_wall_ms,
@@ -389,6 +467,8 @@ class LinearOpWrapper:
             "num_tokens": num_tokens,
             "warmup_steps": WARMUP_STEPS,
             "active_steps": ACTIVE_STEPS,
+            "settle_steps": SETTLE_STEPS,  # untimed forwards after every backlog (GPU-bound pass only)
+            "backlog_kind": BACKLOG_KIND,  # stream | gemm | gemm_alloc | sleep
             "num_tensor_parallel_workers": self.num_tensor_parallel_workers,
             "padded_n_embd": (
                 self.profiling_plan.get("padded_n_embd", self.model_config.embedding_dim)

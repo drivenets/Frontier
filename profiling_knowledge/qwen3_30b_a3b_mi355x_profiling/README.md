@@ -13,6 +13,8 @@ document is self-contained and states its own date, jobs and data paths. This RE
 | `04_linear_op_spike_specialist_brief.md` | the self-contained brief handed to the root-cause investigation (facts, candidates, proposed experiments) |
 | `05_linear_op_spike_root_cause.md` | **the answer**: root cause with CONFIRMED / RULED OUT / SPECULATIVE labels, all experiments, evidence paths |
 | `06_post_proj_rope_dip_specialist_brief.md`, `07_…root_cause.md`, `08_…preregistration.md` | a separate, later investigation of the `attn_post_proj` / `attn_rope` mid-range dip at TP>1 (own README material; not covered here) |
+| `12_dip_investigation_summary.md` | plain-language summary of the dip investigation and the fixes |
+| `13_run_position_anomalies_root_cause.md`, `posprobe.py`, `run_position/`, `../scripts/slurm/qwen3_posprobe*.sbatch` | run-position anomalies in the 2026-09-22 dense collections (within-block drift from the `_sleep` backlog spin; ROCclr's 1000-command batch-flush barrier) with the probe tooling |
 | `sanity_check.py`, `viz/` | dataset sanity checks and the run-group/statistics notebook |
 | `trace_ops.py`, `mark_host_bound.py`, `test_measurement_validity.py`, `../scripts/slurm/qwen3_validation_trace.sbatch` | tooling of the 06–08 investigation |
 | `../scripts/slurm/qwen3_mi355x_profiling.sbatch` | the one sbatch used for every linear_op / attention job here (`STAGE=` selects) |

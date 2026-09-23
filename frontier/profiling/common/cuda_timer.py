@@ -47,6 +47,9 @@ class CudaTimer:
     def __enter__(self):
         if self.disabled:
             return
+        self._paused = self.timer_stats_store.paused  # settle forwards: no events, no samples (see TimerStatsStore.pause)
+        if self._paused:
+            return self
 
         if self.timer_stats_store.profile_method == ProfileMethod.RECORD_FUNCTION:
             self.profiler_function_context = record_function(self.name)
@@ -85,7 +88,7 @@ class CudaTimer:
         )  # convert to ms
 
     def __exit__(self, *args):
-        if self.disabled:
+        if self.disabled or getattr(self, "_paused", False):
             return
 
         if self.timer_stats_store.profile_method == ProfileMethod.RECORD_FUNCTION:

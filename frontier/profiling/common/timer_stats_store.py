@@ -10,9 +10,20 @@ class TimerStatsStore(metaclass=Singleton):
     def __init__(self, profile_method: str, disabled: bool = False):
         self.disabled = disabled
         self.profile_method = ProfileMethod[normalize_profile_method(profile_method).upper()]
+        # While paused, CudaTimer scopes neither record events nor append samples (post-spin settle forwards,
+        # linear_op_wrapper.SETTLE_STEPS). Not touched by clear_stats().
+        self.paused = False
         self.clear_stats()
 
+    def pause(self):
+        self.paused = True
+
+    def resume(self):
+        self.paused = False
+
     def record_time(self, name: str, time):
+        if self.paused:
+            return
         name = name.replace("vidur_", "")
         if name not in self.TIMING_STATS:
             self.TIMING_STATS[name] = []
