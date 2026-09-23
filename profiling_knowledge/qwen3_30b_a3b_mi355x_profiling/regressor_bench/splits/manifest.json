@@ -1,0 +1,56 @@
+{
+  "source_csv": "data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+  "source_md5": "3635e4d305ae5cf84884e275d3ff37ef",
+  "spec": {
+    "holdout_frac": 0.1,
+    "test_frac": 0.15,
+    "seed": 20260923,
+    "band_rel_width": 0.1,
+    "n_strata": 12,
+    "min_stratum_size": 40,
+    "min_stratum_bands": 4
+  },
+  "n_tokens": 3327,
+  "geometries": {
+    "random": {
+      "files": {
+        "train": {
+          "path": "random/train_tokens.csv",
+          "n": 2496,
+          "sha256": "b5d797a8f3169e9a4011834ef12e4c3ecefcdd8b0c5a4cb271a8255a109ddec7"
+        },
+        "test": {
+          "path": "random/test_tokens.csv",
+          "n": 499,
+          "sha256": "970f5f90c1422046e4d232f5e4fed7649b2d9b81a4172ac5214338e7282d6c97"
+        },
+        "holdout": {
+          "path": "random/holdout_tokens.csv",
+          "n": 332,
+          "sha256": "0a0c211210a5dceb20aad52724707459ab2f5d793a75d17ad1c8160552de4c11"
+        }
+      },
+      "n_bands": null
+    },
+    "block": {
+      "files": {
+        "train": {
+          "path": "block/train_tokens.csv",
+          "n": 2412,
+          "sha256": "261810bf7cb8e2818b4a08383fc37e4d0c1bc8db9a0fb778e15abecfbba4b199"
+        },
+        "test": {
+          "path": "block/test_tokens.csv",
+          "n": 502,
+          "sha256": "b6d75fe9b9b752e9aafbc039b77ad70c5e31270c096464f315066922c9187555"
+        },
+        "holdout": {
+          "path": "block/holdout_tokens.csv",
+          "n": 413,
+          "sha256": "df09e4066c08f0eb2aa067b7d0ac1c052e44b0d56a917172677a65241fc4ed2e"
+        }
+      },
+      "n_bands": 87
+    }
+  }
+}
