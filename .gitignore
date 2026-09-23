@@ -246,3 +246,6 @@ worktreess/
 .omx/
 outputs/validation/
 tools/inference_bench/
+
+# local mirrors of /opt/shared datasets (never committed; pointers live in RUN.md files)
+data/local_datasets/
