@@ -13,6 +13,8 @@ Inputs
       <DIR>/profiling_dip_x1/linear_op.csv                    job 21356 (FRONTIER_GPU_BACKLOG_MS=100 experiment X1)
       <DIR>/spike_diag_e1b/worker_gpu*_pid*.jsonl             job 21346 (GC diagnostics)
       <DIR>/posprobe/R15_clock_s25_tp8.jsonl, R17/R19 ...     job 21494 (run-position probes)
+      <DIR>/profiling_dense_fixed_workbacklog/linear_op.csv   job 21519 (gemm_alloc backlog + 3 settle + batch-flush flag)
+      <DIR>/profiling_dense_fixed_workbacklog_settle8/linear_op.csv  job 21539 (same, 8 settle) = the handed-off dataset
 Figures that need a missing input are skipped with a note. Only pandas + matplotlib are required (system python3).
 """
 import argparse
@@ -613,6 +615,66 @@ def fig26_clock_ramp(out, pp_dir):
     finish(fig, "f26_clock_ramp_after_spin.png", out, "data: data/profiling_posprobe/R15,R17,R19 (cluster scratch; job 21494, single process on GPU 0)")
 
 
+def fig27_settle_profiles(out, nf, wb, s8):
+    fig, axes = plt.subplots(1, 4, figsize=(14, 4), sharey=True)
+    for ax, tp in zip(axes, TPS):
+        for df, lab, c in [(nf, "_sleep spin (job 21483)", C_OLD), (wb, "GEMM work backlog + 3 settle (job 21519)", AQUA),
+                           (s8, "GEMM work backlog + 8 settle (job 21539)", C_NEW)]:
+            k, p = position_profile(df[df.num_tensor_parallel_workers == tp], "attn_pre_proj")
+            ax.plot(k + 1, p, color=c, marker="o", ms=2.5, lw=1.2, label=lab)
+        ax.axhline(1, color=AXIS, lw=0.8); ax.set_title(f"attn_pre_proj, TP {tp}", fontsize=10); ax.set_xlabel("timed run index (1–25)")
+    axes[0].set_ylabel("median over rows of sample_k ÷ row median"); axes[0].set_ylim(0.975, 1.02)
+    h, l = axes[0].get_legend_handles_labels(); axes[3].legend(h, l, loc="lower left", fontsize=7.5)
+    fig.suptitle("Chapter 10 — Effect 1 fix on the dense grid: the within-block ramp shrinks with a work backlog and disappears at TP 4/8 with 8 settle forwards", x=0.01, ha="left")
+    finish(fig, "f27_settle_position_profiles.png", out, "data: data/profiling_dense_fixed, _workbacklog, _workbacklog_settle8 (cluster scratch); batch-flush flag on in the two work-backlog runs")
+
+
+def fig28_settled_clock_medians(out, nf, s8):
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2), sharey=True)
+    for ax, op in zip(axes, OPS3):
+        for tp in TPS:
+            a = nf[nf.num_tensor_parallel_workers == tp]; b = s8[s8.num_tensor_parallel_workers == tp]
+            m = a.merge(b, on="num_tokens", suffixes=("_spin", "_s8")).sort_values("num_tokens")
+            r = (m[f"time_stats.{op}.median_s8"] / m[f"time_stats.{op}.median_spin"]).rolling(25, center=True, min_periods=1).median()
+            ax.plot(m.num_tokens, r, color=TP_COLOR[tp], lw=1.1, label=f"TP {tp}")
+        ax.axhline(1, color=AXIS, lw=0.8); tokfmt(ax); ax.set_xlabel("num_tokens"); ax.set_title(op); ax.set_ylim(0.93, 1.03)
+    axes[0].set_ylabel("settled ÷ spin-backlog median"); axes[0].legend(loc="lower left", ncol=2)
+    fig.suptitle("Chapter 10 — what the ramp had cost: with the device settled the medians are 2–3 % lower than the spin-backlog collection, uniformly", x=0.01, ha="left")
+    finish(fig, "f28_settled_vs_spin_medians.png", out, "job 21539 (gemm_alloc backlog, 8 settle) over job 21483 (spin); the 200-forward file of job 21486 sits at the spin level")
+
+
+def fig29_effect1_variants(out):
+    toks = ["6144", "4096", "2048", "1024", "256", "64", "32"]
+    variants = [
+        ("spin, no settle\n(control)", [1.026, 1.017, 1.012, 1.017, 1.003, 0.998, 0.989], [1.061, 1.036, 1.027, 1.023, 1.009, 1.011, 1.005], C_OLD),
+        ("spin + 10 settle\n(21513)", [1.025, 1.018, 1.013, 1.012, 1.003, 0.997, 1.027], [1.066, 1.085, 1.027, 1.060, 1.012, 1.003, 1.002], YELLOW),
+        ("stream add backlog\n+ 3 settle (21517)", [1.028, 1.011, 1.014, 1.006, 0.992, 0.987, 0.998], [1.032, 0.998, 1.025, 1.018, 1.011, 0.993, 0.994], MAGENTA),
+        ("allocating GEMM chain\n+ 3 settle (21517/18)", [0.998, 0.996, 0.995, 1.001, 1.003, 0.995, 1.024], [0.999, 0.985, 1.006, 1.010, 0.997, 1.001, 0.997], C_NEW),
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.2), sharey=True)
+    x = np.arange(len(toks)); w = 0.2
+    for ax, idx, ttl in [(axes[0], 1, "TP 8"), (axes[1], 2, "TP 1")]:
+        for i, v in enumerate(variants):
+            ax.bar(x + (i - 1.5) * w, np.asarray(v[idx]) - 1, width=w, color=v[3], label=v[0], lw=0)
+        ax.axhline(0, color=AXIS, lw=0.8); ax.set_xticks(x); ax.set_xticklabels(toks); ax.set_xlabel("num_tokens"); ax.set_title(f"{ttl}: early/late − 1 (runs 1–5 ÷ runs 20–25 of attn_pre_proj)", fontsize=9.5)
+    axes[0].set_ylabel("drift within the block (0 = flat)"); axes[0].legend(fontsize=7.5, loc="upper right")
+    axes[0].yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v*100:+.0f} %"))
+    fig.suptitle("Chapter 10 — the Effect 1 fix campaign (single-GPU probes): settling after the spin changes nothing; only a work backlog removes the drift", x=0.01, ha="left")
+    finish(fig, "f29_effect1_fix_variants.png", out, "values from 13 §8 (jobs 21513–21518); the dense-GEMM-into-preallocated-output variant is omitted: flat in one job, noisy in another")
+
+
+def fig30_final_dataset(out, s8):
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2), sharey=True)
+    for ax, op in zip(axes, OPS3):
+        for tp in TPS:
+            d = s8[s8.num_tensor_parallel_workers == tp].sort_values("num_tokens")
+            ax.plot(d.num_tokens, d[f"time_stats.{op}.median"] * 1000, color=TP_COLOR[tp], lw=1, label=f"TP {tp}")
+        tokfmt(ax); ax.set_yscale("log"); ax.set_xlabel("num_tokens"); ax.set_title(f"{op} — GPU-bound median")
+    axes[0].set_ylabel("µs (log)"); axes[0].legend(loc="upper left")
+    fig.suptitle("Chapter 11 — the handed-off dataset (job 21539): kernel time at the settled boost clock, 13,308 rows, every fix active", x=0.01, ha="left")
+    finish(fig, "f30_final_dataset_medians.png", out, "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv (md5 3635e4d3…)")
+
+
 # =================================================================================================
 def main():
     ap = argparse.ArgumentParser()
@@ -681,6 +743,13 @@ def main():
     pp = cpath("posprobe")
     if pp:
         fig26_clock_ramp(args.out, pp)
+    fig29_effect1_variants(args.out)
+    wb = cpath("profiling_dense_fixed_workbacklog", "linear_op.csv"); s8 = cpath("profiling_dense_fixed_workbacklog_settle8", "linear_op.csv")
+    if nf is not None and not isinstance(nf, str) and wb and s8:
+        wb, s8 = load(wb), load(s8)
+        fig27_settle_profiles(args.out, nf, wb, s8); fig28_settled_clock_medians(args.out, nf, s8); fig30_final_dataset(args.out, s8)
+    else:
+        print("skip f27/f28/f30: work-backlog collections missing")
 
 
 if __name__ == "__main__":

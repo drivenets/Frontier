@@ -8,6 +8,7 @@ mentions it, so the notebook is self-contained (no dependency on the figures/ fo
     python3 build_story_notebook.py            # writes STORY.ipynb next to STORY.md
 """
 import base64
+import json
 import os
 import re
 import sys
@@ -20,11 +21,22 @@ FIG_DIR = os.path.join(HERE, "figures")
 FIG_RE = re.compile(r"`?(f\d\d_[A-Za-z0-9_]+\.png)`?")
 
 
+CAPTIONS = json.load(open(os.path.join(HERE, "captions.json"), encoding="utf-8")) if os.path.exists(os.path.join(HERE, "captions.json")) else {}
+_FIGNO = {}
+
+
 def image_cell(fname, caption):
     path = os.path.join(FIG_DIR, fname)
     with open(path, "rb") as fh:
         b64 = base64.b64encode(fh.read()).decode("ascii")
-    cell = new_markdown_cell(f"![{caption}](attachment:{fname})\n\n<sub>`{fname}`</sub>")
+    c = CAPTIONS.get(fname)
+    if c:
+        n = _FIGNO.setdefault(fname, len(_FIGNO) + 1)
+        md = (f"![Fig. {n}: {c['title']}](attachment:{fname})\n\n**Fig. {n}: {c['title']}**\n\n"
+              f"**Fig. {n}.** **What it shows.** {c['shows']} **Where to look.** {c['look']} **Why it is in the story.** {c['why']}\n\n<sub>`{fname}`</sub>")
+    else:
+        md = f"![{caption}](attachment:{fname})\n\n<sub>`{fname}`</sub>"
+    cell = new_markdown_cell(md)
     cell["attachments"] = {fname: {"image/png": b64}}
     return cell
 

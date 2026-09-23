@@ -1,0 +1,164 @@
+{
+ "f00_baseline_inherited_vs_50rep.png": {
+  "id": "26c62707-42bd-4a58-bafc-953e017f4a58",
+  "collection": "contentId-7166984214",
+  "width": "1517",
+  "height": "1049"
+ },
+ "f01_spike_envelope_dense_original.png": {
+  "id": "96b75f32-38d2-4cb3-94d1-6b39fc97dbd7",
+  "collection": "contentId-7166984214",
+  "width": "1639",
+  "height": "1049"
+ },
+ "f02_spike_one_row_samples.png": {
+  "id": "a50891a0-17ce-408a-8cc8-956cb28d341a",
+  "collection": "contentId-7166984214",
+  "width": "1517",
+  "height": "617"
+ },
+ "f04_run_position_fingerprint_original.png": {
+  "id": "2bdf69e0-d086-41de-a4d4-7684405f42ce",
+  "collection": "contentId-7166984214",
+  "width": "1600",
+  "height": "660"
+ },
+ "f03_spike_band_first_vs_rerun.png": {
+  "id": "c9094f65-2b67-40f6-9235-dc7f6461c14b",
+  "collection": "contentId-7166984214",
+  "width": "1667",
+  "height": "659"
+ },
+ "f05_gc_gen2_duration_vs_spike.png": {
+  "id": "e5c68d2c-346f-42cd-adae-6ab20f0eda19",
+  "collection": "contentId-7166984214",
+  "width": "1667",
+  "height": "692"
+ },
+ "f06_gc_counter_model.png": {
+  "id": "430b2926-ea24-4704-827b-33ae68d441fc",
+  "collection": "contentId-7166984214",
+  "width": "1606",
+  "height": "628"
+ },
+ "f07_gcfix_max_over_median_before_after.png": {
+  "id": "97fffdcb-9074-4643-b221-2c06aac0642f",
+  "collection": "contentId-7166984214",
+  "width": "1667",
+  "height": "692"
+ },
+ "f08_fingerprint_before_after_gcfix.png": {
+  "id": "8a0aec21-0c74-4887-b2ab-b6b947dddb13",
+  "collection": "contentId-7166984214",
+  "width": "1543",
+  "height": "617"
+ },
+ "f09_dip_medians_original.png": {
+  "id": "52b57b31-7d88-4b2b-991a-70a75076576a",
+  "collection": "contentId-7166984214",
+  "width": "1967",
+  "height": "692"
+ },
+ "f10_dip_row_samples_bimodal.png": {
+  "id": "7f8ad254-ebb8-45a8-8557-b2cbb8706891",
+  "collection": "contentId-7166984214",
+  "width": "1579",
+  "height": "617"
+ },
+ "f11_dip_original_vs_gpu_backlog.png": {
+  "id": "11872602-ee38-4413-ba2d-5fc4b79c4086",
+  "collection": "contentId-7166984214",
+  "width": "1967",
+  "height": "1126"
+ },
+ "f12_inflation_original_over_gpu_bound.png": {
+  "id": "c43b23f0-efaf-4299-9163-cb4d067000dd",
+  "collection": "contentId-7166984214",
+  "width": "1663",
+  "height": "846"
+ },
+ "f13_oproj_kernel_trace_tiles.png": {
+  "id": "72fab933-f23c-43d2-a8db-8edc88f18c3a",
+  "collection": "contentId-7166984214",
+  "width": "1596",
+  "height": "692"
+ },
+ "f14_validation_grid_two_columns.png": {
+  "id": "39811284-0a36-4269-bd09-ae43073a6bda",
+  "collection": "contentId-7166984214",
+  "width": "2116",
+  "height": "660"
+ },
+ "f15_clock_probe_per_pass.png": {
+  "id": "4ae80506-3ccc-41d0-9818-073151d8ce93",
+  "collection": "contentId-7166984214",
+  "width": "2072",
+  "height": "660"
+ },
+ "f16_rope_fallback_vs_fused.png": {
+  "id": "e4c62d67-3637-4c49-b2bc-cf3863158f64",
+  "collection": "contentId-7166984214",
+  "width": "1804",
+  "height": "692"
+ },
+ "f17_dense_fixed_gpu_bound_vs_legacy.png": {
+  "id": "b046c0df-3dc7-4b65-a2be-db5f4f46a12c",
+  "collection": "contentId-7166984214",
+  "width": "2165",
+  "height": "1437"
+ },
+ "f18_dip_gone_old_vs_fixed.png": {
+  "id": "73d5f636-1115-48b7-a644-c22fb0c05d9d",
+  "collection": "contentId-7166984214",
+  "width": "1967",
+  "height": "1126"
+ },
+ "f19_old_over_fixed_ratio.png": {
+  "id": "2dec8715-62a8-423f-849e-17702d7d1831",
+  "collection": "contentId-7166984214",
+  "width": "1967",
+  "height": "647"
+ },
+ "f20_tile_steps_zoom_fixed.png": {
+  "id": "c83aa0d8-1866-4529-9b25-5bef1c83ba53",
+  "collection": "contentId-7166984214",
+  "width": "1792",
+  "height": "690"
+ },
+ "f21_collection_diagnostics_fixed.png": {
+  "id": "768e701f-2617-443e-bff3-cec8d6a00460",
+  "collection": "contentId-7166984214",
+  "width": "1667",
+  "height": "617"
+ },
+ "f22_stall_gone_200_reps.png": {
+  "id": "ba4c92b8-6966-4e53-9e9c-5900392a516a",
+  "collection": "contentId-7166984214",
+  "width": "1560",
+  "height": "692"
+ },
+ "f23_position_profile_fixed_25.png": {
+  "id": "cb958dec-f81f-4916-b63c-e61ac3e071ec",
+  "collection": "contentId-7166984214",
+  "width": "1929",
+  "height": "647"
+ },
+ "f24_position_profile_200_reps.png": {
+  "id": "6852a2b6-9cdd-4213-b5af-330f1722c87c",
+  "collection": "contentId-7166984214",
+  "width": "2084",
+  "height": "1049"
+ },
+ "f26_clock_ramp_after_spin.png": {
+  "id": "fb3e5c3c-2d52-4904-8c90-eec806b22c5c",
+  "collection": "contentId-7166984214",
+  "width": "1845",
+  "height": "692"
+ },
+ "f25_batchflush_before_after.png": {
+  "id": "1e07d82d-4ec1-4edd-9899-afe18432ca24",
+  "collection": "contentId-7166984214",
+  "width": "1897",
+  "height": "692"
+ }
+}

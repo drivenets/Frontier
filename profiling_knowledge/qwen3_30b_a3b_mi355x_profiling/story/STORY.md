@@ -1,6 +1,6 @@
 # The Qwen3-30B-A3B / MI355X linear_op profiling story — source material for the HTML write-up
 
-Compiled 2026-09-22 from the numbered documents in `profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/`, the run records
+Compiled 2026-09-22, extended 2026-09-23 with the run-position fixes, the shared-storage staging and the regressor handoff, from the numbered documents in `profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/`, the run records
 under `data/profiling/compute/mi355x/qwen3-a3b-30b-moe/runs/*/RUN.md`, the implement/debug-loop records in
 `amd-playground/.claude/debug-reports/`, and the git history of branch `smatar/qwen3-30b-mi355-profiling`. Every chapter
 below follows the same shape — **what we saw → the picture → the analysis → the decision → the fix → what changed** — so it
@@ -25,7 +25,7 @@ timing every shape twice (legacy + GPU-bound pass), adding a per-row clock probe
 along the way we found that `attn_rope` had been timing a numerically wrong torch fallback and replaced it with the fused
 kernel; (3) after re-collecting with all fixes, two **run-position patterns** — a 2–8 % within-block drift caused by the
 clock domains idling during the backlog spin, and a fixed-position 5.5 µs bump caused by the ROCm runtime's 1000-command
-batch-flush barrier, the latter removed with a runtime flag and verified. The old canonical `linear_op.csv` overstated GEMM
+batch-flush barrier. The barrier was removed with a runtime flag; the drift was traced to the spin itself and fixed by replacing it with a chain of real GEMMs followed by eight untimed settle forwards, after settle-only and two other backlog kinds had been tried and ruled out. The corrected dataset was moved to the shared datasets store with a checksum, and handed to the regressor work with a document that states what the label means. The old canonical `linear_op.csv` overstated GEMM
 costs by 1.3–2.9× and RoPE by 4–12× over large parts of the grid; the new collections are monotonic, instrument-accounted
 and agree with kernel traces to a constant ≈3 µs per scope boundary.
 
@@ -56,6 +56,10 @@ and agree with kernel traces to a constant ≈3 µs per scope boundary.
 | 2026-09-22 06:47 / 08:42 | **Dense grid re-collected with every fix**: 25 forwards per shape (3.5 min) and 200 forwards as 8 spun blocks of 25 (19 min); medians agree 1.000 | 21483, 21486 | cluster `data/profiling_dense_fixed/`, `data/profiling_dense200/`; notebooks `viz/linear_ops_dense_fixed_*`, `viz/linear_ops_old_vs_fixed_*` (`2293764`, `964d113`) |
 | 2026-09-22 09:34–11:47 | Plain-language summary of the dip investigation; commit of rope fix + spun blocks | — | `12_dip_investigation_summary.md`, `4b8fce3` |
 | 2026-09-22 13:xx–15:43 | Run-position anomalies in the new data: within-block drift (spin → clock idle) and run-20 spike (ROCclr 1000-command batch-flush barrier); barrier fix validated and a full dense grid re-collected with it | 21491–21495, 21499, 21500 | `13_run_position_anomalies_root_cause.md`, `run_position/README_dense_fixed_batchflush.md`, cluster `data/profiling_dense_fixed_batchflush/` |
+| 2026-09-22 16:xx–17:51 | **Effect-1 fix campaign** on single-GPU probes: settle after the spin ruled out; `gemm`, `stream` and `gemm_alloc` backlogs tried; allocating GEMM chain + 3 settle chosen; dense grid re-collected with both fixes (two runs cancelled on the way, READMEs say why) | 21513–21519 | `13_` §8, `run_position/README_dense_fixed_workbacklog.md`, cluster `data/profiling_dense_fixed_workbacklog/` |
+| 2026-09-23 09:27–09:59 | 200-forward file staged on the shared filesystem as canonical (pointer in git), checker gate 1.05 → 1.10; run-position fixes committed; 2026-09-15 dense and 32k/64k attention CSVs moved to shared storage (pointers only in git) | — | `948c524`, `3a8eb55`, `48677a4`, `runs/2026-09-22_0849_…/RUN.md` |
+| 2026-09-23 09:49–10:05 | **Settle 8**: the runs-1–4 transient gone at TP 4/8, halved at TP 1/2, medians unchanged; profiler default `SETTLE_STEPS = 8` | 21539 | `88da6a4`, `run_position/README_dense_fixed_workbacklog_settle8.md`, cluster `data/profiling_dense_fixed_workbacklog_settle8/` |
+| 2026-09-23 11:58 | **Regressor handoff**: the settle-8 file copied to the shared datasets store with `SHA256SUMS`; features, label, caveats and re-check commands written down | — | `14_regressor_dataset_handoff.md`, `bd3bdf1` |
 
 ---
 
@@ -405,12 +409,89 @@ argmax at run 20 drops from 42–60 % to baseline, medians agree with job 21483 
 
 - `f25_batchflush_before_after.png` — profiles before/after the flag, both columns.
 
-**Open:** Effect 1's fix (untimed forwards after the spin, or a work backlog) is proposed, not run; medians are only marginally
-affected (mid-ramp value), min/max/mean/std carry both effects.
+**Fixing Effect 1 (2026-09-22 evening, `13_` §8, jobs 21513–21519).** Four variants were tried on single-GPU probes at TP 1 and
+TP 8, seven token counts each, measuring the within-block drift as runs 1–5 over runs 20–25:
+
+| variant | job | outcome |
+|---|---|---|
+| spin + 10 untimed settle forwards | 21513 | **ruled out**: drift unchanged. The clock probe shows why: the shader clock stays at its post-spin level through all 10 idle forwards and only starts rising when load begins; at TP 1 the samples keep falling while the shader clock is already flat, so a slower clock domain is involved |
+| dense GEMM chain into a preallocated output (`gemm`) + 3 settle | 21515 / 21517 | flat at heavy shapes but small shapes noisy in one job (27–49 µs around a 22.7 µs kernel, clock 1.7–1.9 GHz right after the chain) and clean in the next: job- or thermal-state dependent, not trusted |
+| memory-streaming `add` over 1 GB operands (`stream`) + 3 settle | 21517 | flat at TP 8, but small kernels 4–5 % slower than every spin control and TP 1 heavy shapes still drift 3.5 % |
+| **allocating GEMM chain (`gemm_alloc`) + 3 settle** | 21494, 21517, 21518 | **chosen**: flat profiles (997–1005 permille at every position), shader clock 2330–2340 MHz from run 1, medians at the settled value (TP 1/6144 tokens: 229 µs vs 240–268 with the spin) |
+
+- `f29_effect1_fix_variants.png` — the campaign in one picture: settling after the spin changes nothing; only a work backlog removes the drift.
+
+Code (`3a8eb55`): `BACKLOG_KIND` (env `FRONTIER_GPU_BACKLOG_KIND`, default `gemm_alloc`; `sleep`, `gemm`, `stream` selectable),
+`SETTLE_STEPS` (env `FRONTIER_LINEAR_SETTLE_STEPS`) with `TimerStatsStore.pause()/resume()` so the settle forwards record no events
+and no samples; new CSV columns `settle_steps`, `backlog_kind`. Two dense collections were started and cancelled on the way
+(`data/profiling_dense_fixed_settle/`, `data/profiling_dense_fixed_gemmbacklog/`); their READMEs say why.
+
+**Dense grid with both fixes (job 21519, `gemm_alloc` + 3 settle + batch-flush flag).** Effect 2 absent; `sanity_check.py` PASS on
+every gate, including the 1.05 rule that 875 rows had tripped before. Effect 1 halved, not removed: a ≈1 % transient over runs 1–4
+at every TP and a slow 0.7 % decline at TP 1; per-row spread 40 % smaller (relative MAD 0.98 → 0.59 % at TP 1). Medians 2–3 % below
+job 21483: the settled clock. The single-GPU validation had been flat where the 8-GPU run still shows the transient, so the
+remainder is attributed to clock/thermal settling under full-node load.
+
+**Settle 8 (job 21539, 2026-09-23).** Raising the settle from 3 to 8 untimed forwards removes the runs-1–4 transient at TP 4 and
+TP 8 (profile flat to ±0.1 % from run 1) and halves it at TP 1/2; medians identical to job 21519 (p50 ratio 1.000–1.002). What
+remains at TP 1/2 is a slow, linear 0.9–1.3 % decline over the block that does not depend on the settle count and is absent in
+single-GPU probes. The profiler default is now `SETTLE_STEPS = 8` (`88da6a4`).
+
+- `f27_settle_position_profiles.png` — spin vs work backlog + 3 settle vs + 8 settle, per TP, on the dense grid.
+- `f28_settled_vs_spin_medians.png` — settled ÷ spin medians per op and TP: 2–3 % lower everywhere, uniformly.
+
+**Open:** the TP 1/2 residual decline (speculatively clock/thermal settling under full-node load; a memory/fabric-clock sampler
+under load would attribute it); medians are affected by less than 0.5 %.
 
 ---
 
-## 13. The fixes, in one table
+## 13. Chapter 11 — staging, the final dataset and the handoff
+
+**Where the data lives now (convention from 2026-09-22, `48677a4`).** Large CSVs are no longer committed. They live under
+`/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/<linear_op|attention>/<run-name>/`, each with a `README.md`
+(the run's RUN.md) and `SHA256SUMS`; a run directory in git that holds only a `RUN.md` is a pointer to that location. The
+2026-09-15 dense linear_op file and the 32k/64k attention files were moved there; the small validation grids and the root
+trio stay in git as they predate the convention.
+
+**Two candidates for "the file to train on".**
+
+1. `2026-09-22_0849_dense_200fwd_all_fixes/` (job 21486; `948c524`): 200 forwards as 8 spun blocks of 25, every measurement fix of
+   chapters 4–9, `sanity_check.py` PASS at the 1.10 gate (raised from 1.05 that day with the reason recorded), validity GREEN,
+   no sample above 10× its median. Marked canonical for training in the dataset README on 2026-09-23 morning. Its per-run samples
+   still carry the two run-position artefacts of chapter 10, and its medians were taken mid-ramp.
+2. `2026-09-23_0949_dense_workbacklog_settle8/` (job 21539; `bd3bdf1`): 25 timed forwards behind an allocating GEMM backlog with
+   8 settle forwards and the batch-flush flag; `sanity_check.py` PASS; medians 2–3 % below the 200-forward file (the settled
+   clock), per-row relative MAD ≈0.55 %. **This is the file the handoff points at**; the dataset README still names the first one
+   as canonical, a discrepancy `14_` records.
+
+- `f30_final_dataset_medians.png` — the handed-off dataset: GPU-bound medians of the three attention ops, all TPs.
+
+**The handoff (`14_regressor_dataset_handoff.md`, 2026-09-23).** Written for whoever builds the new per-(op, TP) regressor, and
+checked against the file itself:
+
+- One row = one (`num_tokens`, TP) cell: the attention-layer linear ops of Qwen3-30B-A3B in isolation on one MI355X, BF16, dummy
+  weights, sharded as at that TP, no collectives; 3 warm-up + 8 untimed settle + 25 timed forwards on a device held busy.
+- **Label**: `time_stats.<op>.median` in milliseconds, kernel time at the automatic boost clock (≈2.4 GHz, recorded per row) plus
+  ≈2.5–3 µs of event-record cost per scope boundary, as defined by the measurement contract (`10_`). Use `median`; do not use
+  `mean`/`min`/`max` (single-sample events) or the `time_stats_hostbound.*` columns (host launch spans on 60–80 % of rows).
+- **Features**: `num_tokens` (3,327 values) and `num_tensor_parallel_workers` ∈ {1,2,4,8} as the split key; everything else is a
+  constant or instrument metadata that must not enter a model. Shape-derived inputs (FLOPs, bytes) can be built from the model
+  constants given there. 15 regressors: 3 attention ops × 4 TPs plus 3 replicated ops at TP 1.
+- **Cautions**: tile-selection steps of 15–30 % at TP 2/4/8 are real and must not be smoothed; kernels below ≈10 µs carry a
+  ±3–5 µs instrument floor; the TP 1/2 residual position drift moves the median by < 0.5 %; the validity test passes every
+  assertion but `T2 TP4 4096/64 = 1.972` against 2.0 (the settled clock made the 4,096-token kernel 4 % faster), reported not
+  re-thresholded.
+- A companion `linear_op_kernel_only.csv` (kineto kernel sums, one sample per shape) is for checking a fitted intercept, not for
+  training.
+
+**Also in this period**: the run-position tooling (`posprobe.py`, `run_position/*.py`, eight `qwen3_posprobe*.sbatch` files) was
+committed (`3a8eb55`); a fourth notebook renders the settle-8 file (`viz/linear_ops_settle8_median_envelope.ipynb`, untracked);
+the three older notebooks were regenerated so that their kernel-change markers are placed by tile geometry rather than by
+observed timing (`2273f91`).
+
+---
+
+## 14. The fixes, in one table
 
 | fix | mechanism | where | validated by |
 |---|---|---|---|
@@ -422,33 +503,38 @@ affected (mid-ramp value), min/max/mean/std carry both effects.
 | Fused RoPE kernel | `get_rope` prefers Frontier's class + `vllm._custom_ops.rotary_embedding`; per-head fallback; `attn_rope_impl` column | `4b8fce3` | kineto traces: 1 kernel per scope; numerics vs float64; job 21410 |
 | Checkers | full two-column schema, probe group, rope gate, coverage ≥ 3×, `test_measurement_validity.py --expect red\|green`; positional path | `d4469be`, `4b8fce3` | vacuous-PASS bug caught by review |
 | Measurement contract | kernel time at a stated clock + separate overhead term | `10_`, `ec63f31` | agreed by the dataset owner |
-| Batch-flush barrier out of the timed loop | `DEBUG_CLR_MAX_BATCH_SIZE=1000000` in `LINEAR_DOCKER_ENV` | uncommitted (`13_` addendum) | jobs 21499, 21500 |
+| Batch-flush barrier out of the timed loop | `DEBUG_CLR_MAX_BATCH_SIZE=1000000` in `LINEAR_DOCKER_ENV` | `3a8eb55` (`13_` §7) | jobs 21499, 21500; run-20 spike and runs-21/22 stall at baseline in 21519/21539 |
+| Work backlog instead of the spin | allocating chain of 4096² bf16 GEMMs (`BACKLOG_KIND = gemm_alloc`), calibrated per worker and re-fitted from every delivered backlog | `3a8eb55` (`13_` §8) | probes 21517/21518 flat from run 1; dense 21519: ramp halved, spread −40 % |
+| Settle forwards after the backlog | `SETTLE_STEPS = 8` untimed forwards with `TimerStatsStore.pause()/resume()`; columns `settle_steps`, `backlog_kind` | `3a8eb55`, `88da6a4` | dense 21539: transient gone at TP 4/8, halved at TP 1/2, medians unchanged |
+| Checker gate 1.05 → 1.10 | reason recorded in `sanity_check.py` (legacy column bimodal at the TP 1 crossover) | `948c524` | 200-forward file PASS; both work-backlog files pass even the old 1.05 |
+| Shared-storage convention | large CSVs under `/opt/shared/…/datasets/…` with README + `SHA256SUMS`; pointers in git | `48677a4`, `948c524`, `bd3bdf1` | three older files moved, two new files staged |
 
 Things we believed and had to retract are listed in `12_` §3 and `07_` §5 / `13_` §6; they belong on the page as much as the fixes.
 
 ---
 
-## 14. Still open (as of 2026-09-22)
+## 15. Still open (as of 2026-09-23)
 
-- Effect 1 (within-block drift after the spin): fix proposed, not run; a memory/fabric-clock sampler would settle the remainder.
+- Effect 1 residual: a slow, linear 0.9–1.3 % decline over the block at TP 1/2 in the 8-GPU dense runs, independent of the settle count and absent in single-GPU probes; a memory/fabric-clock sampler under full-node load would attribute it. Medians move < 0.5 %.
+- Why the `gemm` and `gemm_alloc` backlogs behaved differently in job 21515 but not in 21517 is not understood (speculatively, power-management state after a full-power GEMM burst).
 - Kernels below ≈10 µs (small GEMMs at TP4/TP8, RoPE below ≈3k tokens, the norms) sit inside the instrument's ≈3 µs floor and
   are not cross-validated between event pairs and traces.
 - Locked-clock dense dataset (the contract's second clock condition) not collected.
 - Canonical instrument choice (event-pair kernel time vs kineto kernel-only) pending the agreement analysis.
-- The 2026-09-22 collections are cluster scratch, not staged run dirs; the trainer still points at the 2026-09-15 file.
-- Checker gate 1.05 → 1.10 (with reason) not yet applied.
+- The dataset README names the 200-forward file (job 21486) as canonical while the handoff points at the settle-8 file (job 21539); one of them has to give. The old trainer still points at the 2026-09-15 file and is being replaced.
+- The two work-backlog collections (21519, 21539) have READMEs in `run_position/` and in the datasets store but no `runs/…/RUN.md` pointer in git yet.
 - Attention datasets (16k/32k/64k) were validated but never had the linear_op-style per-run scrutiny.
 
 ---
 
-## 15. Source index
+## 16. Source index
 
 **Documents (in order of the story):** `00_requirements_and_source_map.md`, `01_plan.md`, `review/*` (plan iterations, 2026-09-10/14),
 `02_run_record.md`, `03_linear_op_spike_investigation.md`, `04_linear_op_spike_specialist_brief.md`, `05_linear_op_spike_root_cause.md`,
 `data/profiling_gcfix/RUN.md`, `06_post_proj_rope_dip_specialist_brief.md`, `07_post_proj_rope_dip_root_cause.md`,
 `08_measurement_validation_preregistration.md`, `09_measurement_validation_results.md`, `10_measurement_contract.md`,
-`11_attn_rope_task.md`, `12_dip_investigation_summary.md`, `13_run_position_anomalies_root_cause.md`,
-`run_position/README_dense_fixed_batchflush.md`; dataset `README.md` and every `runs/*/RUN.md`;
+`11_attn_rope_task.md`, `12_dip_investigation_summary.md`, `13_run_position_anomalies_root_cause.md` (§7–8: the fixes),
+`run_position/README_dense_fixed_{batchflush,workbacklog,workbacklog_settle8}.md`, `14_regressor_dataset_handoff.md`; dataset `README.md` and every `runs/*/RUN.md`;
 `~/amd-playground/.claude/debug-reports/debug_linear_op_host_bound_timing_2026-09-16.md`,
 `implement_linear_op_two_column_timing_2026-09-17.md`, `implement_linear_op_recollection_2026-09-17.md`;
 `~/amd-playground/.claude/plans/linear-op-recollection-contract-a.md` (+ `.iterations.md`).
@@ -462,12 +548,15 @@ Things we believed and had to retract are listed in `12_` §3 and `07_` §5 / `1
 - `viz/linear_ops_old_vs_fixed_comparison.ipynb` — old vs new-legacy vs new-GPU-bound overlays and the three-way ratio
   decomposition (recollection effect vs fix effect vs net); 30 figures.
 - `viz/newplot.png` — one exported summary plot (`attn_pre_proj` TP8, auto-filtered, old data).
+- `viz/linear_ops_settle8_median_envelope.ipynb` — the settle-8 file (job 21539), untracked as of 2026-09-23.
 
 **Data (repo):** canonical `data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv` (job 21313); `runs/…dense3327_rerun`
 (21334); `runs/…grid386` (21309); `runs/legacy_pre-2026-09_torch-sdpa/`; `runs/2026-09-17_0846_…two_column` (21389);
 `runs/2026-09-17_1016_…probe` (21400); `runs/2026-09-17_1250_…rope_fix` (21410); `data/profiling_gcfix/` (21361, untracked).
 
-**Data (cluster only, `/opt/shared/frontier-qwen3-profiling/Frontier/data/`):** `profiling_dense_fixed/` (21483),
+**Data (shared datasets store, `/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/`):** `linear_op/2026-09-15_1308_dense3327/` (moved), `linear_op/2026-09-22_0849_dense_200fwd_all_fixes/` (21486), `linear_op/2026-09-23_0949_dense_workbacklog_settle8/` (21539, the handoff file, md5 `3635e4d3…`), `attention/…32k`, `…64k`; each with README + `SHA256SUMS`.
+
+**Data (cluster scratch, `/opt/shared/frontier-qwen3-profiling/Frontier/data/`):** `profiling_dense_fixed/` (21483), `profiling_dense_fixed_workbacklog/` (21519), `profiling_dense_fixed_workbacklog_settle8/` (21539), `profiling_dense_fixed_settle/` and `profiling_dense_fixed_gemmbacklog/` (cancelled, READMEs say why),
 `profiling_dense200/` (21486), `profiling_dense_fixed_batchflush/` (21500), `profiling_dip_x1/` (21356), `profiling_dip_x2/rocprof/`
 (traces), `profiling_spike_e*/` and `profiling/sweep_work/logs/spike_diag/<e>/` (GC experiments), `profiling_posprobe/` (R1–R27),
 `profiling_val_*`, `profiling_rope_fix*`, `profiling_fixedclk/`, `profiling_f6*`.
@@ -486,10 +575,11 @@ Things we believed and had to retract are listed in `12_` §3 and `07_` §5 / `1
 # all figures: first copy the cluster scratch files into one directory, e.g.
 #   <DIR>/profiling_dense_fixed/linear_op.csv, <DIR>/profiling_dense200/linear_op.csv,
 #   <DIR>/profiling_dense_fixed_batchflush/linear_op.csv, <DIR>/profiling_dip_x1/linear_op.csv,
-#   <DIR>/spike_diag_e1b/*.jsonl, <DIR>/posprobe/R15_clock_s25_tp8.jsonl R17_busy_s25_tp8.jsonl R19_default_s25_tp8.jsonl
+#   <DIR>/spike_diag_e1b/*.jsonl, <DIR>/posprobe/R15_clock_s25_tp8.jsonl R17_busy_s25_tp8.jsonl R19_default_s25_tp8.jsonl,
+#   <DIR>/profiling_dense_fixed_workbacklog/linear_op.csv, <DIR>/profiling_dense_fixed_workbacklog_settle8/linear_op.csv
 /usr/bin/python3 profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/story/make_story_figures.py --cluster-data <DIR>
 ```
 
 Requires only pandas and matplotlib (the system `python3` has both; the `qwen3-profiling` venv does not have matplotlib).
 Colours follow one convention throughout: orange = the original / legacy / host-bound measurement, blue = the fixed /
-GPU-bound measurement, aqua = kernel traces; TP 1/2/4/8 = blue/orange/aqua/yellow; red shading = the anomaly under discussion.
+GPU-bound measurement (or the final variant when three collections are compared), aqua = kernel traces or the intermediate variant; TP 1/2/4/8 = blue/orange/aqua/yellow; red shading = the anomaly under discussion.
