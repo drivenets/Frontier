@@ -96,8 +96,12 @@ def convert(md_text, media):
 
     toc = ('<div data-type="extension" data-extension-key="toc" data-extension-type="com.atlassian.confluence.macro.core" '
            'data-parameters=\'{"macroParams":{"maxLevel":{"value":"2"}},"macroMetadata":{"schemaVersion":{"value":"1"},"title":"Table of Contents"}}\'></div>')
+    try:
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
+    except Exception:
+        head = "HEAD"
     intro = ('<div data-type="panel-info"><p>Source: <code>profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/story/STORY.md</code> '
-             'on branch <code>smatar/qwen3-30b-mi355-profiling</code> of the Frontier fork (commit <code>a115d1f</code>); the same folder holds the '
+             f'on branch <code>smatar/qwen3-30b-mi355-profiling</code> of the Frontier fork (commit <code>{head}</code>); the same folder holds the '
              'figures, the notebook <code>STORY.ipynb</code> and the scripts that regenerate them. Numbered references such as '
              '<code>05_</code> or <code>09_</code> §3a point at the investigation documents in the parent directory.</p></div>')
     return toc + intro + out
