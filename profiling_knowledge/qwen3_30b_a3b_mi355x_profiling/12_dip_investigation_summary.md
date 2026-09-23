@@ -132,5 +132,7 @@ blocks). The unstable column is the legacy one; the recommendation is a 1.10 bou
 
 **Still open.** Kernels below ≈10 µs (small GEMMs at TP4/TP8, RoPE below ≈3k tokens, the norms) sit within the instrument's own floor
 and are not cross-validated between event pairs and traces; the locked-clock dataset and the choice of canonical instrument
-(event-pair kernel time vs kineto kernel-only) are decisions the agreement analysis is meant to inform; and the new dense runs are
-still in the cluster scratch tree, not yet staged as run dirs or pointed at by the trainer.
+(event-pair kernel time vs kineto kernel-only) are decisions the agreement analysis is meant to inform. The 200-forward file is staged
+on the shared filesystem (`/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0849_dense_200fwd_all_fixes/`,
+README next to it; pointer `runs/2026-09-22_0849_…/RUN.md` in the dataset README's runs index) and is the file to train on; the
+GPU-bound-over-legacy gate was raised to 1.10 with the reason recorded in `sanity_check.py`.

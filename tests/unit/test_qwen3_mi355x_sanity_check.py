@@ -289,8 +289,8 @@ def test_tokens_grid_override_accepts_a_validation_grid(dataset: Path) -> None:
     "mutate, expected_fail",
     [
         (lambda df: df.assign(gpu_backlog_ms_actual=2.0 * 50 * 0.6), "FAIL: linear_op: GPU backlog covers < 3.0x the legacy loop on 1544 rows (min ratio 2.00)"),
-        (lambda df: df.assign(**{"time_stats.attn_post_proj.median": df["time_stats_hostbound.attn_post_proj.median"] * 1.10}),
-         "FAIL: linear_op: GPU-bound attn_post_proj exceeds 1.05x legacy on 1544 rows (max 1.100)"),
+        (lambda df: df.assign(**{"time_stats.attn_post_proj.median": df["time_stats_hostbound.attn_post_proj.median"] * 1.15}),
+         "FAIL: linear_op: GPU-bound attn_post_proj exceeds 1.1x legacy on 1544 rows (max 1.150)"),  # gate 1.10 since 2026-09-22 (12_ s5)
     ],
     ids=["backlog-coverage", "gpu-bound-above-legacy"],
 )

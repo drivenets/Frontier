@@ -27,7 +27,11 @@ ALLOW_ROPE_FALLBACK = "--allow-rope-fallback" in sys.argv
 ROPE_IMPL_COLUMN = "attn_rope_impl"  # per-row: vllm_kernel | torch_fallback | vllm_object_<method> | none | unknown; only the fused kernel is a RoPE timing (11_attn_rope_task.md)
 GEMM_SCOPES = ("attn_pre_proj", "attn_post_proj", "mlp_up_proj", "mlp_down_proj")  # the <= 1.05 gate is for GEMM scopes only (norm scopes reach 1.069, rope 1.057)
 # Same values as linear_op_wrapper.BACKLOG_COVERAGE_FACTOR / the handoff's 1.05 gate; duplicated so this checker never imports torch.
-BACKLOG_COVERAGE_FACTOR, GPU_BOUND_MAX_OVER_LEGACY = 3.0, 1.05
+BACKLOG_COVERAGE_FACTOR, GPU_BOUND_MAX_OVER_LEGACY = 3.0, 1.10
+# GPU_BOUND_MAX_OVER_LEGACY was 1.05 from 32-row grids (worst 1.020). On the dense grid (jobs 21483/21486, 13,308 rows) 875 rows read
+# 1.05-1.094, almost all TP1 at 1.5k-14k tokens: there the LEGACY loop sits at the host/device crossover and its samples are bimodal
+# (block means 36-42 us) while the GPU-bound samples are flat (39.0 us in all 8 blocks) - the unstable column is the legacy one.
+# The gate guards against the GPU-bound column being inflated by the spin; 1.10 keeps that guard (12_dip_investigation_summary.md s5).
 ATTN_OPS = ("attn_pre_proj", "attn_rope", "attn_post_proj")
 # The complete two-column timing schema written by LinearOpWrapper.profile() under --profile_method cuda_event. Any of these present
 # means a two-column run was intended, in which case ALL of them are required (a partial schema would let the gates below skip silently).
