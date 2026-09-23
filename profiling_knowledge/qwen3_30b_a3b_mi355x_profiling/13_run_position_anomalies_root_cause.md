@@ -298,3 +298,10 @@ settled clock) and the per-row spread is 40 % smaller (relative MAD 0.98 → 0.5
 where the 8-GPU dense run still shows the runs-1–4 transient and a slow 0.7 % TP1 decline — SPECULATIVE: clock/thermal
 settling under full-node load is slower than on an otherwise idle node. Next step if it matters: `FRONTIER_LINEAR_SETTLE_STEPS=8`
 for the transient; a clock probe under full-node load for the residual.
+
+**Settle 8 (job 21539, 2026-09-23, `data/profiling_dense_fixed_workbacklog_settle8/`, `sanity_check.py` PASS).** Raising the
+settle from 3 to 8 untimed forwards removes the runs-1–4 transient at TP4/TP8 (early/late 1.002/1.000, position profile flat to
+±0.1 % from run 1) and halves it at TP1/TP2 (1.011/1.007). Medians are identical to job 21519 (p50 ratio 1.000–1.002). The
+residual at TP1/TP2 is a slow linear 0.9–1.3 % decline over the whole block, independent of the settle count and absent in
+single-GPU probes: SPECULATIVE, clock/thermal settling under full-node load on a timescale longer than a block. The profiler
+default is now `SETTLE_STEPS = 8`.

@@ -43,7 +43,7 @@ BACKLOG_BLOCK_STEPS = int(os.environ.get("FRONTIER_LINEAR_BACKLOG_BLOCK_STEPS", 
 # memory-bound, few packets). Job 21517: gemm_alloc + 3 settle forwards gives a flat position profile at every shape with medians
 # at the settled value (1-5 % below the spin), stream leaves small kernels ~4 % slow, sleep drifts: gemm_alloc is the default.
 BACKLOG_KIND = os.environ.get("FRONTIER_GPU_BACKLOG_KIND", "gemm_alloc")
-SETTLE_STEPS = int(os.environ.get("FRONTIER_LINEAR_SETTLE_STEPS", "3"))
+SETTLE_STEPS = int(os.environ.get("FRONTIER_LINEAR_SETTLE_STEPS", "8"))  # 3 left a ~1 % transient in runs 1-4 of the 8-GPU dense run (job 21519); 8 removes it at TP4/TP8 (job 21539)
 _GEMM_BACKLOG = {}  # operands and the fitted ms per call (re-fitted from every delivered backlog like _SLEEP_CYCLES_PER_MS)
 GEMM_BACKLOG_N = 4096  # 4096^2 bf16 GEMM: ~0.13 ms on MI355X, 3 x 32 MB
 STREAM_BACKLOG_ELEMS = 512 * 1024 * 1024  # 1 GB bf16 per operand; add reads 2 GB + writes 1 GB: ~0.6 ms at ~5 TB/s
