@@ -160,5 +160,29 @@
   "collection": "contentId-7166984214",
   "width": "1897",
   "height": "692"
+ },
+ "f27_settle_position_profiles.png": {
+  "id": "b77c8a2e-6ed3-4822-b780-31475e929466",
+  "collection": "contentId-7166984214",
+  "width": "1016",
+  "height": "317"
+ },
+ "f28_settled_vs_spin_medians.png": {
+  "id": "655e2cc6-a058-435c-bb0c-fac02df65e58",
+  "collection": "contentId-7166984214",
+  "width": "944",
+  "height": "332"
+ },
+ "f29_effect1_fix_variants.png": {
+  "id": "c218f81a-266d-4f10-8ac1-462268fd65b4",
+  "collection": "contentId-7166984214",
+  "width": "872",
+  "height": "331"
+ },
+ "f30_final_dataset_medians.png": {
+  "id": "1dbffaf6-7bf4-4c4e-943c-787857b06141",
+  "collection": "contentId-7166984214",
+  "width": "944",
+  "height": "332"
  }
 }

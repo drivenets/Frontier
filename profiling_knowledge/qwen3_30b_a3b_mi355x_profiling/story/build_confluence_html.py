@@ -81,8 +81,10 @@ def convert(md_text, media):
         caption = FIG_RE.sub("", inner).strip()
         caption = re.sub(r"^<p>(.*)</p>$", r"\1", caption, flags=re.S)   # loose lists already wrap items in <p>
         caption = re.sub(r"^\s*[—–-]\s*", "", caption.strip())
-        return "<li><p>" + caption + "</p>" + "".join(figure_html(f, caption, media) for f in figs) + "</li>"
+        # hoist the figure out of the list: Confluence's editor drops media nodes nested in list items on save
+        return "</ul><p>" + caption + "</p>" + "".join(figure_html(f, caption, media) for f in figs) + "<ul>"
     out = re.sub(r"<li>(.*?)</li>", li_repl, out, flags=re.S)
+    out = re.sub(r"<ul>\s*</ul>", "", out)
 
     def p_repl(m):
         inner = m.group(1)
