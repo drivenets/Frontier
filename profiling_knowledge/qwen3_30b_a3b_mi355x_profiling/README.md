@@ -16,6 +16,7 @@ document is self-contained and states its own date, jobs and data paths. This RE
 | `12_dip_investigation_summary.md` | plain-language summary of the dip investigation and the fixes |
 | `13_run_position_anomalies_root_cause.md`, `posprobe.py`, `run_position/`, `../scripts/slurm/qwen3_posprobe*.sbatch` | run-position anomalies in the 2026-09-22 dense collections (within-block drift from the `_sleep` backlog spin; ROCclr's 1000-command batch-flush barrier) with the probe tooling |
 | `14_regressor_dataset_handoff.md` | handoff for the new per-(op, TP) regressor: where the settled-clock dataset is (shared store, job 21539), what a row is, label and feature columns, caveats |
+| `spike_diag_tools/` | the seven scripts that produced every table in 05 from the `spike_diag` JSONL (see its README) |
 | `sanity_check.py`, `viz/` | dataset sanity checks and the run-group/statistics notebook |
 | `trace_ops.py`, `mark_host_bound.py`, `test_measurement_validity.py`, `../scripts/slurm/qwen3_validation_trace.sbatch` | tooling of the 06–08 investigation |
 | `../scripts/slurm/qwen3_mi355x_profiling.sbatch` | the one sbatch used for every linear_op / attention job here (`STAGE=` selects) |
@@ -95,5 +96,5 @@ Knobs (env, all optional): `LINEAR_TOKENS_PY` (Python expression for the token l
 `LINEAR_DOCKER_ENV` (extra `-e VAR=…` for the container), `LINEAR_LOG_SUFFIX`; inside the container
 `FRONTIER_SPIKE_DIAG=<dir>`, `FRONTIER_SPIKE_GC=disable|freeze`, `FRONTIER_SPIKE_INIT_COLLECT=1`,
 `FRONTIER_LINEAR_ACTIVE_STEPS=<n>` (default 50). A full grid takes ~2.5 min on one node; the JSONL is one line per task
-with `gc_events`, `forwards_ms` (host window of each forward) and all per-op sample lists, so a 20-line script
-correlating `gc_events[].start_ms` with `forwards_ms` reproduces every table in 05.
+with `gc_events`, `forwards_ms` (host window of each forward) and all per-op sample lists; the scripts in
+`spike_diag_tools/` reproduce every table in 05 from it.
