@@ -14,6 +14,7 @@ document is self-contained and states its own date, jobs and data paths. This RE
 | `05_linear_op_spike_root_cause.md` | **the answer**: root cause with CONFIRMED / RULED OUT / SPECULATIVE labels, all experiments, evidence paths |
 | `06_post_proj_rope_dip_specialist_brief.md`, `07_…root_cause.md`, `08_…preregistration.md` | a separate, later investigation of the `attn_post_proj` / `attn_rope` mid-range dip at TP>1 (own README material; not covered here) |
 | `12_dip_investigation_summary.md` | plain-language summary of the dip investigation and the fixes |
+| `HOWTO_run_linear_op_collection.md` | runbook: sync, submit (all knobs), verify with the checkers, stage on shared storage, tests, gotchas |
 | `13_run_position_anomalies_root_cause.md`, `posprobe.py`, `run_position/`, `../scripts/slurm/qwen3_posprobe*.sbatch` | run-position anomalies in the 2026-09-22 dense collections (within-block drift from the `_sleep` backlog spin; ROCclr's 1000-command batch-flush barrier) with the probe tooling |
 | `14_regressor_dataset_handoff.md` | handoff for the new per-(op, TP) regressor: where the settled-clock dataset is (shared store, job 21539), what a row is, label and feature columns, caveats |
 | `spike_diag_tools/` | the seven scripts that produced every table in 05 from the `spike_diag` JSONL (see its README) |
@@ -82,6 +83,9 @@ Cluster only (not in git; `/opt/shared/frontier-qwen3-profiling/Frontier` is an 
 - Slurm logs: `data/profiling/sweep_work/logs/spike-<e>-<jobid>.out`, profiler stdout `linear_op_<e>.log`
 
 ## How to reproduce or extend
+
+**Current runbook: `HOWTO_run_linear_op_collection.md`** (sync, submit, knobs, verify, stage on shared storage, tests). The block
+below is the 2026-09-16 spike-diagnostic recipe, kept for reproducing documents 03–05.
 
 ```
 # from the VM; always sudo -u dn on the cluster
