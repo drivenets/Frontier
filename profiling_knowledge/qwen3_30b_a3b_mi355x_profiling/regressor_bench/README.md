@@ -18,8 +18,10 @@ python -m pytest $B/tests -q                                   # invariants of s
 python $B/bench.py make-splits                                 # once; refuses to overwrite a sealed split
 python $B/bench.py run --out $B/results/full_v1                # ~1 h on 6 cores; --quick for a 1-minute smoke
 python $B/bench.py report --results $B/results/full_v1         # summary.md + figs/
-python $B/baseline_rf_xgb.py                                   # RF + XGBoost baselines, train/test only (~25 min)
-python $B/build_eval_notebook.py --execute                     # EVAL_baseline_rf_xgb.ipynb: tails (p95/p99/max), where, in µs
+python $B/baseline_rf_xgb.py                                   # RF + histogram-XGBoost baselines, train/test only (~25 min); RF rows reused below
+python $B/baseline_v2.py                                       # RF + XGBoost (exact) + linear interp + noise floor (needs the job 21519 mirror, ~4 min)
+python $B/build_eval_notebook.py --execute                     # EVAL_baseline_rf_xgb.ipynb from results/baseline_v2: tails (p95/p99/max), where, in µs
+python $B/build_per_sample_notebook.py --execute               # EVAL_per_sample_errors.ipynb: per-sample signed-error histograms + MAPE/P95/P99 per (op, TP), from per_sample_errors.csv
 python $B/bench.py holdout --results $B/results/full_v1 --unseal --models <the 1-2 finalists>   # once, only when the user says so
 ```
 
