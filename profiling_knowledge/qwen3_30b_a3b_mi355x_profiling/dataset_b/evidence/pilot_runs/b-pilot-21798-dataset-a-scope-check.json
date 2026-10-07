@@ -10,10 +10,39 @@
     "qkv_qk_norm",
     "rope_kv"
   ],
+  "in_scope_clock_states": {
+    "outside_calibration": 866,
+    "unknown_resolution": 2793
+  },
   "in_scope_kernels": 3659,
+  "in_scope_kernels_by_phase": {
+    "measurement": 2261,
+    "warmup": 1398
+  },
   "in_scope_scope_invocations": 2312,
   "out_of_scope_attribution": {
     "unresolved": 2150
+  },
+  "out_of_scope_kernel_families": {
+    "Cijk_Alik_Bljk_BBS_BH_Bias_HA_S_SAV_UserArgs_MT32x16x256_MI16x16x1_SN_LDSB1_AFC0_AFEM1_AFEM1_ASEM1_CLR1_CADS0_DTLA0_DTLB0_DTVA0_DTVB0_EPS0_FDSI0_GRPM1_GRVWA8_GRVWB8_GSU0_GSUAMB_GLS0_ISA950_IU1_K1_LDSTI0_LBSPPA512_LBSPPB512_LBSPPM0_LPA16_LPB16_LPM0_LRVW8_LWPMn1_MIAV0_MIWT2_1_MO40_NTn1_NTA4_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR1_PKA1_SIA3_SS1_SPO0_SRVW0_SSO0_SVW1_SK3_SKFTR0_SKXCCM8_TLDS1_ULSGRO0_USL1_UIOFGRO0_USFGRO0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS64_WG16_4_4": 8,
+    "_ZN2ck15kernel_moe_gemmINS_15GridwiseMoeGemmINS_13tensor_layout4gemm8RowMajorENS3_11ColumnMajorENS_5TupleIJS4_S5_S4_EEES4_DF16bDF16bffNS6_IJfffEEEDF16bNS_16tensor_operation12element_wise11PassThroughESB_8TypeCastLNS9_6device18GemmSpecializationE0ELi256ELi32ELi128ELi128ELi8ELi8ELi16ELi16ELi2ELi2ENS_8SequenceIJLi16ELi16ELi1EEEENSF_IJLi1ELi0ELi2EEEESH_Li2ELi8ELi8ELb0ELi0ESG_SH_SH_Li2ELi8ELi8ELb0ELi0ELi2ELi2ENSF_IJLi1ELi8ELi1ELi32EEEENSF_IJLi2ELi1ELi2ELi1EEEELNS_26BlockGemmPipelineSchedulerE0ELNS_24BlockGemmPipelineVersionE0ELi0ELb0ELb0ELb1ELb1EiDF16bDF16bDF16bDF16bEELb1ELNS_25InMemoryDataOperationEnumE1ELi2ELNS_10TailNumberE1EEEvNT_8ArgumentE": 384,
+    "_ZN2ck15kernel_moe_gemmINS_15GridwiseMoeGemmINS_13tensor_layout4gemm8RowMajorENS3_11ColumnMajorENS_5TupleIJS4_S5_S4_EEES4_DF16bDF16bffNS6_IJfffEEEDF16bNS_16tensor_operation12element_wise11PassThroughESB_8TypeCastLNS9_6device18GemmSpecializationE0ELi256ELi32ELi64ELi64ELi8ELi8ELi16ELi16ELi2ELi1ENS_8SequenceIJLi8ELi32ELi1EEEENSF_IJLi1ELi0ELi2EEEESH_Li2ELi8ELi8ELb0ELi0ESG_SH_SH_Li2ELi8ELi8ELb0ELi0ELi2ELi1ENSF_IJLi1ELi32ELi1ELi8EEEENSF_IJLi8ELi1ELi8EEEELNS_26BlockGemmPipelineSchedulerE0ELNS_24BlockGemmPipelineVersionE0ELi1ELb0ELb1ELb0ELb1EiDF16bDF16bDF16bDF16bEELb1ELNS_25InMemoryDataOperationEnumE0ELi2ELNS_10TailNumberE1EEEvNT_8ArgumentE": 384,
+    "_ZN5aiter24add_rmsnorm_quant_kernelIDF16bDF16bLi256ELi8ELb1ELb0ELb1ELi1EEEvPT0_PT_PfS4_S4_S4_dbiiiiiiibb": 8,
+    "__amd_rocclr_copyBuffer": 42,
+    "aiter::topksoftmax_4x128x8_bf16": 384,
+    "compute_position_kernel": 1,
+    "create_flashinfer_kv_indices_triton": 7,
+    "void ": 8,
+    "void aiter::greedy_sample_kernel": 8,
+    "void aiter::opus_moe_sorting_entry": 384,
+    "void aiter::wv_splitk_small_fp16_bf16_kernel": 384,
+    "void at::native::": 15,
+    "void at::native::elementwise_kernel_manual_unroll": 38,
+    "void at::native::index_elementwise_kernel": 38,
+    "void at::native::vectorized_elementwise_kernel": 40,
+    "void rocprim::ROCPRIM_400200_NS::detail::trampoline_kernel": 10,
+    "void sglang::clamp_position_kernel": 6,
+    "write_req_to_token_pool_triton": 1
   },
   "out_of_scope_kernels": 2150,
   "structural_pass": true

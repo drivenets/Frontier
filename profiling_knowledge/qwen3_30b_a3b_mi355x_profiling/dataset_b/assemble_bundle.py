@@ -99,7 +99,8 @@ def load_requests(driver_output_dirs):
             require(r["request_id"] not in seen, f"duplicate request_id across phases: {r['request_id']}")
             seen.add(r["request_id"])
             out.append(dict(
-                request_id=r["request_id"], input_ids=r["input_ids"], output_ids=r["output_ids"],
+                request_id=r["request_id"], phase=r["phase"],
+                input_ids=r["input_ids"], output_ids=r["output_ids"],
                 prompt_tokens=r["prompt_tokens"], generated_tokens=r["generated_tokens"],
                 requested_new_tokens=r["requested_new_tokens"], status=r["status"],
             ))
@@ -110,7 +111,12 @@ def forward_marker_trace_ns(marker_csv_path):
     """Map forward_id -> trace_ns (this rank's B|fwd|<id> marker row's own
     Start_Timestamp) for every forward marker in this rank's trace. Begin
     timestamp, not the push/pop midpoint: begin_forward() in marker_runtime.py
-    records host_begin_ns immediately before the same push call."""
+    records host_begin_ns immediately before the same push call.
+
+    Also resolves the "__drain__" sentinel anchor's trace_ns from rocprofv3's
+    MARKER_CONTROL_API roctxProfilerPause row -- marker_runtime.py's
+    stop_measurement() emits exactly one such row per capture, bracketing the
+    true end of the measured window (code review finding 3)."""
     trace_ns = {}
     with open(marker_csv_path, newline="") as f:
         for row in csv.DictReader(f):
@@ -123,6 +129,9 @@ def forward_marker_trace_ns(marker_csv_path):
                 forward_id = label.split("|", 2)[2]
                 require(forward_id not in trace_ns, f"duplicate B|fwd|{forward_id} marker row")
                 trace_ns[forward_id] = int(row["Start_Timestamp"])
+            elif row["Domain"] == "MARKER_CONTROL_API" and label == "roctxProfilerPause":
+                require("__drain__" not in trace_ns, "duplicate roctxProfilerPause marker row")
+                trace_ns["__drain__"] = int(row["Start_Timestamp"])
     return trace_ns
 
 
@@ -244,19 +253,36 @@ def assemble(run_dir, driver_output_dirs, telemetry_path, ranks, static, output,
 
     # One calibration fit per physical GPU (processes can share a GPU only in
     # a misconfigured run, which b_check.py's "ranks share GPU identity"
-    # check catches elsewhere); hold out a tail fraction of anchors per GPU
-    # for a residual check this function reports but does not gate on --
+    # check catches elsewhere); hold out a fraction of anchors per GPU for a
+    # residual check this function reports but does not gate on --
     # calibrate_b.calibrate()'s own docstring says to retain held-out
     # evidence, not that this script decides acceptance.
+    #
+    # Code review finding 3: the two endpoint anchors (chronologically first
+    # and last) are never held out. calibrate_b.calibrate() sets
+    # valid_trace_begin_ns/end_ns from the fit set's own first/last anchor,
+    # so holding out the tail (the previous behavior) shrank the fitted
+    # calibration's valid range below the true capture window, wrongly
+    # marking later in-window kernels outside_calibration. Holdout is drawn
+    # only from the interior, evenly spaced, so the fit's valid range always
+    # brackets the complete capture while still exercising a real held-out
+    # residual check.
     clock_calibrations, holdout_report = [], {}
     by_gpu = {}
     for pid, anchors in anchors_by_process.items():
         by_gpu.setdefault(gpu_ids[pid], []).extend(anchors)
     for gpu_id, anchors in by_gpu.items():
         anchors = sorted(anchors, key=lambda a: a["trace_ns"])
-        n_holdout = max(0, int(len(anchors) * holdout_fraction))
-        fit_set = anchors[: len(anchors) - n_holdout] if n_holdout else anchors
-        holdout_set = anchors[len(anchors) - n_holdout:] if n_holdout else []
+        n = len(anchors)
+        interior = list(range(1, n - 1))
+        n_holdout = min(max(0, int(n * holdout_fraction)), len(interior))
+        if n_holdout:
+            step = len(interior) / n_holdout
+            holdout_idx = {interior[int(i * step)] for i in range(n_holdout)}
+        else:
+            holdout_idx = set()
+        fit_set = [a for i, a in enumerate(anchors) if i not in holdout_idx]
+        holdout_set = [a for i, a in enumerate(anchors) if i in holdout_idx]
         require(len(fit_set) >= 3, f"fewer than 3 calibration anchors available to fit gpu {gpu_id}")
         cal = calibrate(fit_set, gpu_id, evidence_ref)
         residuals = []

@@ -53,6 +53,18 @@ for dev in /sys/class/drm/card*/device; do
   fi
 done
 [[ -n "$gpu_card" ]] || { echo "could not map PCI bus $pci_bus to a /sys/class/drm card" >&2; exit 2; }
+# sensor_resolution_ns is honestly null, not a placeholder we forgot to fill
+# in: it is the true update granularity of pp_dpm_sclk/pp_dpm_mclk's
+# reported value, which neither amdgpu's module parameters nor its debugfs
+# pm_info exposes as a documented constant (checked: no dpm-interval module
+# parameter exists). Establishing a real, evidenced value needs an empirical
+# probe of this file's actual update rate under live GPU load (an idle GPU
+# mostly just sits at its lowest P-state, which would not measure anything
+# real) -- that is a dedicated follow-up, not something to invent a number
+# for here. telemetry_b.ClockJoin already treats a null resolution as its
+# own honest "unknown_resolution" clock_status rather than silently treating
+# it as valid (code review finding 3, action 4): every target kernel reads
+# unknown_resolution until that follow-up probe lands.
 cat > "$run_dir/gpu_devices.json" <<EOF
 [{"gpu_id": "pci:${pci_bus}", "sclk_path": "${sclk_path}", "mclk_path": "${mclk_path}", "sensor_resolution_ns": null}]
 EOF
@@ -67,24 +79,26 @@ echo "resolved GPU telemetry device: pci=$pci_bus card=$gpu_card sclk=$sclk_path
 #
 # $HOME/.aiter is the SHARED dn account's cache, used concurrently by other
 # users' jobs on other nodes (confirmed: docker ps on amd-mi355x-3 lists many
-# other users' running/stopped containers under this same account). A lock
-# file under build/ is not necessarily stale just because it is old or
-# belongs to a different job -- it may be a live, in-progress compile from a
-# concurrent job on another node sharing the same $HOME. Only ever remove a
-# lock this flock -n (non-blocking) confirms is NOT currently held by any
-# process; never remove by age, by job-id guess, or unconditionally.
+# other users' running/stopped containers under this same account).
+#
+# Code review finding 2: this job must NEVER delete another job's build
+# lock, and the previous flock -n based "is it stale" test does not prove
+# that -- a successful flock test only proves no OTHER process currently
+# holds an flock on that exact file; it proves nothing about a lock
+# implementation based on file *existence* (e.g. PyTorch's FileBaton, which
+# the installed AITER toolchain may use), and the test-then-rm sequence
+# itself has a release-before-removal race (flock releases its lock the
+# instant the "true" subshell exits, before rm runs) regardless of which
+# lock implementation is in play. A local review test demonstrated a stale-
+# looking flock test succeeding against a file a separate process was still
+# holding open via exclusive creation. There is no reliable way for this
+# script to establish staleness on its own, so it no longer tries: never
+# touch an existing lock file in the shared cache. If a stuck lock ever
+# blocks a build, resolve it by hand using AITER's own documented recovery
+# procedure, or give this job a private AITER_CACHE_DIR instead of sharing
+# $HOME/.aiter.
 HOST_AITER_CACHE_DIR="$HOME/.aiter"
 mkdir -p "$HOST_AITER_CACHE_DIR"
-if [ -d "$HOST_AITER_CACHE_DIR/build" ]; then
-  while IFS= read -r -d '' lock; do
-    if flock -n "$lock" true 2>/dev/null; then
-      rm -f "$lock"
-      echo "removed confirmed-stale AITER lock: $lock"
-    else
-      echo "AITER lock still held by a live process, leaving it alone: $lock"
-    fi
-  done < <(find "$HOST_AITER_CACHE_DIR/build" -name lock -type f -print0 2>/dev/null)
-fi
 
 docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video --group-add 110 \
   --ipc=host --network=host --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 32g \

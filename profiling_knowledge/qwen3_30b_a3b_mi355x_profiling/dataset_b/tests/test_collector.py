@@ -229,6 +229,30 @@ def test_rocprof_marker_csv_schema(tmp_path):
     with pytest.raises(Invalid): rocprof_marker_csv(empty, "p0")
 
 
+# Code review finding 4: assembly dropped drive_b.py's request phase
+# (warmup/measurement), so the extracted output had no structural way to
+# exclude warmup from measurement statistics other than guessing from a
+# request-id naming convention.
+def test_kernel_and_scope_summaries_carry_request_phase():
+    b = fixture(phase='decode')
+    b['requests'][0]['phase'] = 'warmup'
+    result = extract(b)
+    target_kernels = [k for k in result['kernels'] if k['scope_id'] is not None]
+    assert target_kernels and all(k['request_phase'] == 'warmup' for k in target_kernels)
+    assert result['scopes'] and all(s['request_phase'] == 'warmup' for s in result['scopes'])
+
+    measurement = extract(fixture())
+    assert all(s['request_phase'] == 'measurement' for s in measurement['scopes'])
+
+
+def test_forward_mixing_request_phases_is_rejected():
+    b = fixture(phase='mixed')  # "p" and "d" co-occur in one forward (batches[1])
+    for r in b['requests']:
+        r['phase'] = 'warmup' if r['request_id'] == 'd' else 'measurement'
+    with pytest.raises(Invalid, match='mixes request phases'):
+        extract(b)
+
+
 def test_rocprof_marker_csv_skips_control_api_rows(tmp_path):
     """marker_runtime.py's roctxProfilerResume/Pause calls (start_measurement/
     stop_measurement) show up in the real marker CSV as their own domain --
@@ -661,4 +685,29 @@ def test_dataset_a_scope_canary_fails_on_ambiguous_dataset_a_kernel():
     b = fixture()
     mutate(b, 'ambiguous')  # ambiguity on the embedding scope, a Dataset-A scope
     with pytest.raises(Invalid, match='structurally broken'):
+        check_dataset_a_scope(b, SPEC)
+
+
+# Code review finding 1: the canary's "expected" set used to come from
+# extract()'s result["scopes"] summaries, which only exist for scopes that
+# already got an attributed kernel -- so a marker or dispatch the native
+# trace lost entirely was invisible to the missing-scope check and the
+# canary passed over genuinely missing target data. Both cases below
+# reproduce exactly the damaged-data scenarios the review used as evidence.
+@pytest.mark.parametrize('case', ['missing_marker', 'lost_target_even_with_count', 'orphan_scope'])
+def test_dataset_a_scope_canary_rejects_missing_target_data(case):
+    b = fixture()
+    mutate(b, case)
+    with pytest.raises(Invalid):
+        check_dataset_a_scope(b, SPEC)
+
+
+def test_dataset_a_scope_canary_rejects_missing_scope_invocation():
+    """A target scope invocation dropped from the metadata entirely (not
+    just its kernel or marker) must fail verify_forward_scope_metadata()
+    before extraction even runs."""
+    b = fixture()
+    b['scopes'] = [s for s in b['scopes'] if not (s['process_id'] == 'p0' and s['forward_id'] == 'f1'
+                                                   and s['physical_scope'] == 'embedding')]
+    with pytest.raises(Invalid, match='scope coverage disagrees'):
         check_dataset_a_scope(b, SPEC)

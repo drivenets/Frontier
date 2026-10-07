@@ -10,7 +10,7 @@
     "python/sglang/srt/models/qwen2_moe.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/models/qwen2_moe.py",
     "python/sglang/srt/models/qwen3_moe.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/models/qwen3_moe.py"
   },
-  "marker_runtime_py_sha256": "51f8b3cbd5d8240281e137ee9b2d9ca1b11efa19f75bea8170e5bbcb668a339d",
+  "marker_runtime_py_sha256": "158089040574d961aa70e46aa74d6461b8994cf925af11e9fedade3de862f953",
   "original_sha256": {
     "python/sglang/srt/entrypoints/http_server.py": "305a02a9238b62da90c9dc90ecbbdc0811ba7725f13056677e3ed7dbbfc81d4e",
     "python/sglang/srt/layers/communicator.py": "7305647bba46a6cfac7b1eef10a0c4f4ca89e802cd4a1d045774e8e47db0481f",
@@ -21,10 +21,10 @@
     "python/sglang/srt/models/qwen2_moe.py": "20467a642243f2160f34381c31468b85c60c33316e4a33b38c07be3ac53424df",
     "python/sglang/srt/models/qwen3_moe.py": "7c559324111dfdc6927e97d13e31d5ff7b23bf7efa4d4fa33d636c026212bb05"
   },
-  "patch_sha256": "009d280e8ada3024a8163865946bf96a020285d6d748210d42c14d99f4ccb2e2",
+  "patch_sha256": "5801caf06d4ed388bab364a2142cd1a4f14e81aa79b07d4bde648439722d2c29",
   "patched_sha256": {
     "python/sglang/srt/entrypoints/http_server.py": "0c22ad3e61af5265bfca9364590706529aa945d9b78826d428988f1076908066",
-    "python/sglang/srt/frontier_b_markers.py": "51f8b3cbd5d8240281e137ee9b2d9ca1b11efa19f75bea8170e5bbcb668a339d",
+    "python/sglang/srt/frontier_b_markers.py": "158089040574d961aa70e46aa74d6461b8994cf925af11e9fedade3de862f953",
     "python/sglang/srt/layers/communicator.py": "779d24c1c17e1d2e5ea8661bc7b3d8a26308fa6185c57c426c778713f9425b6d",
     "python/sglang/srt/managers/io_struct.py": "8956e366c1aff95e748c9d3f6df875873b522a91bd585cee0ff2591609c03382",
     "python/sglang/srt/managers/schedule_batch.py": "dbb1a3177de91733c3f19fe6afcfa0fc9bcaf66d6cc5c10fef26bf7fa5b205ee",

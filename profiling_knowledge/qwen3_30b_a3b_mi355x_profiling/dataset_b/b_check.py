@@ -16,6 +16,39 @@ def expected_scopes(forward, manifest, spec):
     return expected
 
 
+def verify_forward_scope_metadata(bundle, spec):
+    """Every forward's *metadata-recorded* scope invocations (bundle["scopes"],
+    written by marker_runtime.begin_scope independently of whether the native
+    trace or extractor later manage to attribute a kernel to it) must exactly
+    equal what scope_spec.json's rules say must occur for that forward's
+    phase and the model's layer count -- computed from first principles via
+    expected_scopes(), not from anything the native trace or extract()
+    observed.
+
+    This is the one shared structural validator both check() and
+    check_dataset_a_scope.py use (code review finding 1: a scope with no
+    attributed kernel has no entry in extract()'s result["scopes"] summaries,
+    so a check built only from that output can never detect a scope whose
+    marker or dispatch the native trace lost -- the expected/actual
+    comparison here never depends on attribution succeeding).
+
+    Returns (forwards, scope_groups), both indexed by (process_id,
+    forward_id), for the caller to reuse.
+    """
+    m = bundle["manifest"]
+    forwards = indexed(bundle["forwards"], ["process_id", "forward_id"])
+    scope_groups = defaultdict(list)
+    for s in bundle["scopes"]:
+        require((s["process_id"], s["forward_id"]) in forwards, "orphan scope forward")
+        scope_groups[s["process_id"], s["forward_id"]].append(s)
+    for key, f in forwards.items():
+        actual = [(s["layer"], s["physical_scope"], s["variant"]) for s in scope_groups[key]]
+        require(len(actual) == len(set(actual)), "duplicate physical scope invocation")
+        require(set(actual) == expected_scopes(f, m, spec),
+                "scope coverage disagrees with observed forward applicability")
+    return forwards, scope_groups
+
+
 def check(bundle, spec):
     m = bundle["manifest"]
     require(m["schema_version"] == VERSION, "schema version mismatch")
@@ -52,18 +85,14 @@ def check(bundle, spec):
         w = windows[k["process_id"],]
         require(w["begin_ns"] <= k["begin_ns"] <= k["end_ns"] <= w["end_ns"], "kernel crosses capture window")
         require(k["raw_ref"], "missing kernel source reference")
-    forwards = indexed(bundle["forwards"], ["process_id", "forward_id"])
     observed = indexed(bundle["scheduler"], ["global_forward_id"])
     require(observed, "missing independent scheduler observations")
     requests = indexed(bundle["requests"], ["request_id"])
     require(requests, "missing request completion ledger")
     scopes = indexed(bundle["scopes"], ["process_id", "scope_id"])
-    scope_groups = defaultdict(list)
-    derived_forwards = []
-    for s in scopes.values():
-        require((s["process_id"], s["forward_id"]) in forwards, "orphan scope forward")
-        scope_groups[s["process_id"], s["forward_id"]].append(s)
+    forwards, scope_groups = verify_forward_scope_metadata(bundle, spec)
     cross_rank = defaultdict(list)
+    derived_forwards = []
     for key, f in forwards.items():
         require((f["process_id"],) in procs, "unknown forward process")
         global_key = (f["global_forward_id"],)
@@ -75,9 +104,6 @@ def check(bundle, spec):
         derived_forwards.append(dict(f, run_id=m["run_id"], **features(
             f, m["model"], m["tp"], m.get("consumer_aliases", {}).get("kv_cache_prediction_granularity"))))
         cross_rank[global_key].append(f["process_id"])
-        actual = [(s["layer"], s["physical_scope"], s["variant"]) for s in scope_groups[key]]
-        require(len(actual) == len(set(actual)), "duplicate physical scope invocation")
-        require(set(actual) == expected_scopes(f, m, spec), "scope coverage disagrees with observed forward applicability")
     require(set(cross_rank) == set(observed), "scheduler forward missing from trace metadata")
     for pids in cross_rank.values():
         require(len(pids) == m["tp"] and set(pids) == {k[0] for k in procs}, "missing/duplicate cross-rank forward")

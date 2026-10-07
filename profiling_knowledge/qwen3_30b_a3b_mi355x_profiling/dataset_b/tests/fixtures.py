@@ -42,7 +42,13 @@ def fixture(tp=1, phase="prefill", padded=False, overlap=False, query=8, chunked
              scheduler=[], requests=[], telemetry=[])
     for rid, count in generations.items():
         n = query * (2 if chunked and phase == "prefill" else 1)
-        b["requests"].append(dict(request_id=rid, input_ids=[7] * n, output_ids=[9] * count,
+        # "measurement" uniformly: no fixture batch mixes two different
+        # requests with two different phases, so this can never trip
+        # b_extract._forward_request_phases()'s mixed-phase check -- that
+        # check is about warmup vs measurement (drive_b.py's request-manifest
+        # phase), unrelated to this function's own `phase` parameter
+        # (prefill/decode/mixed execution phase).
+        b["requests"].append(dict(request_id=rid, phase="measurement", input_ids=[7] * n, output_ids=[9] * count,
                                   prompt_tokens=n, generated_tokens=count, requested_new_tokens=count, status="complete"))
     for i, batch in enumerate(batches):
         kinds = {s["kind"] for s in batch}

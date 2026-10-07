@@ -156,9 +156,32 @@ class MarkerBuffer:
             raise RuntimeError("roctx profiler resume failed")
 
     def stop_measurement(self):
-        """Closes the native trace window at a confirmed_drain() boundary."""
-        if self.backend == "roctx" and self.profiler_pause(0) != 0:
+        """Closes the native trace window at a confirmed_drain() boundary.
+
+        Also records a calibration anchor bracketing this exact moment, under
+        the sentinel forward_id "__drain__" (never a real forward's id, which
+        is always a plain integer string). Without this, a calibration fit's
+        valid_trace_end_ns is only as late as the last FITTED forward's own
+        entry anchor (begin_forward() anchors at forward entry, not at the
+        end of all the GPU work that forward dispatches) -- so kernels
+        dispatched later in that same forward, and the entire held-out tail
+        of forwards, were wrongly marked outside_calibration even though they
+        are genuinely inside the measured window (code review finding 3:
+        job 21798 had 866 such kernels, exactly the last two forwards'
+        worth). This anchor is the true end of the window; combined with
+        assemble_bundle.py no longer holding out an endpoint anchor, it lets
+        the fit's valid range cover every in-window kernel."""
+        if self.backend != "roctx":
+            return
+        host_begin_ns = time.monotonic_ns()
+        rc = self.profiler_pause(0)
+        host_end_ns = time.monotonic_ns()
+        if rc != 0:
             raise RuntimeError("roctx profiler pause failed")
+        self.append_cpu_metadata(dict(
+            kind="calibration_anchor", forward_id="__drain__",
+            host_begin_ns=host_begin_ns, host_end_ns=host_end_ns,
+        ))
 
     def append_cpu_metadata(self, record):
         # Caller must supply immutable CPU scalars/tuples copied at scheduling time.

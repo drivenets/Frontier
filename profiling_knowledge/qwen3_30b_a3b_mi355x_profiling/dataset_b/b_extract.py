@@ -7,6 +7,25 @@ from telemetry_b import ClockJoin
 KERNEL_KEY = ["process_id", "gpu_id", "dispatch_id"]
 
 
+def _forward_request_phases(bundle):
+    """process_id/forward_id -> the single request phase (warmup/measurement)
+    every sequence in that forward belongs to, from the independent request
+    ledger -- not from a request-name convention (code review finding 4's
+    acceptance criterion). A forward whose sequences span more than one
+    phase is a real ambiguity this cannot resolve at the kernel level (a
+    kernel is attributed to a scope, not to one sequence within a batch);
+    fail loud rather than silently pick one."""
+    requests_by_id = indexed(bundle["requests"], ["request_id"])
+    phases = {}
+    for f in bundle["forwards"]:
+        seen = {requests_by_id[(s["request_id"],)]["phase"] for s in f["sequences"]
+                if (s["request_id"],) in requests_by_id}
+        require(len(seen) <= 1,
+                f"forward {f['process_id']}/{f['forward_id']} mixes request phases: {seen}")
+        phases[f["process_id"], f["forward_id"]] = next(iter(seen), None)
+    return phases
+
+
 def extract(bundle):
     manifest = bundle["manifest"]
     processes = indexed(manifest["processes"], ["process_id"])
@@ -14,6 +33,7 @@ def extract(bundle):
     indexed(kernels, KERNEL_KEY)
     apis = indexed(bundle["launches"], ["process_id", "correlation_id"])
     scopes = indexed(bundle["scopes"], ["process_id", "scope_id"])
+    forward_request_phase = _forward_request_phases(bundle)
     indexed(bundle["ranges"], ["process_id", "marker_id"])
     ranges = defaultdict(list)
     for r in bundle["ranges"]:
@@ -46,7 +66,7 @@ def extract(bundle):
     for k in kernels:
         key = tuple(k[x] for x in KERNEL_KEY)
         row = dict(k, run_id=manifest["run_id"], scope_id=None, forward_id=None,
-                   rank=processes[k["process_id"],]["rank"],
+                   rank=processes[k["process_id"],]["rank"], request_phase=None,
                    kernel_dur_us=(k["end_ns"] - k["begin_ns"]) / 1000,
                    attribution="unresolved", exclusion_reason=None, attribution_range_id=None)
         predecessor = predecessors[key]
@@ -77,7 +97,8 @@ def extract(bundle):
                 row.update(scope_id=r["scope_id"], forward_id=scope["forward_id"],
                            physical_scope=scope["physical_scope"], layer=scope["layer"],
                            variant=scope["variant"], attribution="eager_correlation",
-                           attribution_range_id=r["marker_id"], launch_ref=api["raw_ref"])
+                           attribution_range_id=r["marker_id"], launch_ref=api["raw_ref"],
+                           request_phase=forward_request_phase.get((k["process_id"], scope["forward_id"])))
             elif not targets and exclusions:
                 r = min(exclusions, key=lambda r: r["end_ns"] - r["begin_ns"])
                 row.update(attribution="excluded", exclusion_reason=r["exclusion_reason"],
@@ -101,5 +122,10 @@ def extract(bundle):
         summaries.append(dict(scope, run_id=manifest["run_id"], n_kernels=len(rows),
                               begin_ns=start, end_ns=end, scope_span_us=(end - start) / 1000,
                               kernel_sum_us=sum(r["kernel_dur_us"] for r in rows),
-                              kernel_union_us=union / 1000))
+                              kernel_union_us=union / 1000,
+                              # Every kernel in one scope invocation shares one forward, and
+                              # therefore one request phase (code review finding 4): downstream
+                              # analysis can filter warmup out of measurement statistics by this
+                              # field instead of by a request-id naming convention.
+                              request_phase=rows[0]["request_phase"]))
     return dict(kernels=output, scopes=summaries)
