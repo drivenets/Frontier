@@ -1,0 +1,1011 @@
+--- /dev/null
++++ b/python/sglang/srt/frontier_b_markers.py
+@@ -0,0 +1,457 @@
++"""SGLang-side support module, now with real call-site integration (see
++sglang_b_markers.patch: qwen3_moe.py, qwen2_moe.py, communicator.py,
++schedule_batch.py).
++
++Use only when FRONTIER_B_MARKERS=1 at import. No events, GPU synchronization,
++or tensor reads on the measured path.
++
++Metadata persistence has two tiers, and they are not interchangeable:
++
++1. **confirmed_drain()** -- the only tier that is allowed to claim a demonstrated
++   safe boundary. Called exactly once per process, only from the
++   FrontierBDrainReqInput control-request handler
++   (sglang_b_markers.patch: scheduler.py's handle_frontier_b_drain), itself
++   only ever invoked from Scheduler.process_input_requests -- which runs at
++   the top of event_loop_normal/event_loop_overlap, strictly before the next
++   batch's run_batch() call and strictly after the previous batch's forward
++   call has returned on the host side (confirmed by reading both loops: the
++   loop structure guarantees no open marker/forward at that point regardless
++   of overlap scheduling, since CPU-side overlap is about the *next* batch's
++   scheduling running ahead of GPU completion of the *current* one, not about
++   this module's host-side push/pop outliving the synchronous Python call
++   that emits it). confirmed_drain() re-verifies depth==0 and no open forward
++   itself rather than trusting the caller, and raises instead of flushing a
++   torn state. This is the only path the driver (run_b.py) is allowed to
++   treat as "the window is closed, it is safe to ask the native tracer to
++   finalize and to send termination signals."
++2. **emergency_flush()** -- best-effort only, invoked by the atexit hook and
++   by nothing else. It never claims a demonstrated safe boundary (a signal or
++   abnormal-exit context cannot prove one), is explicitly tagged
++   `drain_mode="emergency"` with the actual (possibly nonzero) marker depth
++   and the actual (possibly open) forward id recorded honestly, and does not
++   raise on bad state -- the goal is to preserve whatever was collected, not
++   to assert it is complete. atexit only fires on a clean process exit at
++   all (never on SIGKILL), so this is a fallback for the case where
++   confirmed_drain() was never reached, not a replacement for it.
++
++Native-trace finalization (rocprofv3 actually finishing its own CSVs) is a
++*third*, separate concern this module cannot observe or control from inside
++the traced process; verifying a native trace belongs to the same capture is
++done later, after the fact, by assemble_bundle.py matching native_pid/
++capture_id -- never asserted here.
++
++begin_scope/end_scope/begin_forward/end_forward below are the call-site API.
++Forward-scope nesting is resolved later, by normalize_b.bind_labels, purely
++from timestamp containment (a scope range must fall inside a B|fwd| range on
++the same process/thread) -- so these helpers never need to thread a forward
++ID down into instrumented call sites, only emit correctly nested push/pop
++pairs.
++
++record_scheduler_batch/begin_forward together produce the CPU-side
++"scheduler"/"forward" records b_check.py cross-validates against each other.
++record_scheduler_batch is called from schedule_batch.py's prepare_for_extend/
++prepare_for_decode, built from Req.prefix_indices/extend_range/rid -- NOT from
++ForwardBatch's derived tensors -- so the b_check.py comparison between it and
++begin_forward's forward-level record (read from ForwardBatch.seq_lens_cpu/
++extend_*_cpu, the tensors the model actually consumes) is a real independent
++cross-check, not a value compared against itself. The two share one forward-id
++counter: record_scheduler_batch mints the id (SGLang's scheduler always runs
++synchronously before the model forward it prepared, within one rank/process),
++begin_forward consumes it once. A model forward with no matching scheduler
++record (a schedule_batch.py call path this module doesn't yet hook, e.g.
++speculative decoding's early-return in prepare_for_decode) mints its own id
++instead of silently reusing a stale one -- and b_check.py then correctly fails
++it as "forward lacks scheduler evidence" rather than passing spuriously.
++"""
++import atexit
++import ctypes
++import itertools
++import json
++import os
++import threading
++import time
++
++
++class MarkerBuffer:
++    def __init__(self, backend, max_records=1000000):
++        if backend not in ("roctx", "kineto"):
++            raise ValueError("select one marker backend: roctx or kineto")
++        self.backend = backend
++        self.max_records = max_records
++        self.records = []
++        self.overflow = False
++        self.drained = False
++        self.local = threading.local()
++        if backend == "roctx":
++            # rocprofv3 1.1.0 / rocprofiler-sdk 1.1.0 only instruments calls that go through
++            # librocprofiler-sdk-roctx.so; libroctx64.so is ABI-identical but is never hooked by
++            # this tool (verified empirically: dataset_b/evidence/rocprofv3-format-probe2-21737,
++            # both RTLD_LOCAL and RTLD_GLOBAL dlopen of libroctx64.so produce zero marker events
++            # and no "MARKER (ROCTx) ... initialized" log line; librocprofiler-sdk-roctx.so does).
++            lib = ctypes.CDLL("librocprofiler-sdk-roctx.so")
++            self.push = lib.roctxRangePushA
++            self.push.argtypes = [ctypes.c_char_p]
++            self.push.restype = ctypes.c_int
++            self.pop = lib.roctxRangePop
++            self.pop.argtypes = []
++            self.pop.restype = ctypes.c_int
++            # roctx.h: tid=0 means "global pause/resume of the profiler in the
++            # current process" -- paired with the server launch's rocprofv3
++            # --selected-regions flag, this makes rocprofv3 record kernels
++            # only between the Resume/Pause calls below, so raw_kernel_count
++            # is the measured window by construction (no post-hoc filtering
++            # of model-load/JIT-compile kernels that happen before the first
++            # measured forward -- B_SCHEMA.md: "measured-window selection and
++            # boundary provenance must be explicit"). --selected-regions
++            # already starts every thread unrecorded by default (confirmed:
++            # job 21797's server.log logs "rocprofv3 is only recording ...
++            # surrounded by roctxProfilerResume(0)/roctxProfilerPause" per
++            # thread with no Pause() call made yet) -- do NOT also call
++            # roctxProfilerPause(0) here at buffer construction (module
++            # import time, before SGLang's own HIP/ROCm runtime context
++            # exists): doing so crashed with SIGABRT during Python import in
++            # that same job, since the roctx library's pause/resume path
++            # apparently assumes an already-initialized ROCm runtime context.
++            self.profiler_pause = lib.roctxProfilerPause
++            self.profiler_pause.argtypes = [ctypes.c_uint64]
++            self.profiler_pause.restype = ctypes.c_int
++            self.profiler_resume = lib.roctxProfilerResume
++            self.profiler_resume.argtypes = [ctypes.c_uint64]
++            self.profiler_resume.restype = ctypes.c_int
++        else:
++            from torch.profiler import record_function
++            self.record_function = record_function
++
++    def label(self, text):
++        """Prepare static labels once during model initialization."""
++        return text.encode() if self.backend == "roctx" else text
++
++    def begin(self, label):
++        depth = getattr(self.local, "depth", 0)
++        if self.backend == "roctx":
++            if self.push(label) < 0:
++                raise RuntimeError("roctx push failed")
++            handle = None
++        else:
++            handle = self.record_function(label)
++            handle.__enter__()
++        self.local.depth = depth + 1
++        return handle
++
++    def end(self, handle):
++        if getattr(self.local, "depth", 0) <= 0:
++            raise RuntimeError("unmatched marker end")
++        if self.backend == "roctx":
++            if self.pop() < 0:
++                raise RuntimeError("roctx pop failed")
++        else:
++            handle.__exit__(None, None, None)
++        self.local.depth -= 1
++
++    def start_measurement(self):
++        """Opens the native trace window (see roctxProfilerPause/Resume note
++        in __init__); a no-op for the kineto backend, which has no equivalent
++        selected-regions control."""
++        if self.backend == "roctx" and self.profiler_resume(0) != 0:
++            raise RuntimeError("roctx profiler resume failed")
++
++    def stop_measurement(self):
++        """Closes the native trace window at a confirmed_drain() boundary."""
++        if self.backend == "roctx" and self.profiler_pause(0) != 0:
++            raise RuntimeError("roctx profiler pause failed")
++
++    def append_cpu_metadata(self, record):
++        # Caller must supply immutable CPU scalars/tuples copied at scheduling time.
++        # No serialization or disk writes here; overflow is fatal to acceptance.
++        if len(self.records) >= self.max_records:
++            self.overflow = True
++            return
++        self.records.append(record)
++
++    def _write_atomic(self, path, extra):
++        # Same-directory temp file + os.replace: on a POSIX filesystem (the
++        # bind-mounted b_metadata dir is a plain directory, not NFS-direct in
++        # the container's view) this is atomic -- a reader never observes a
++        # partially-written file, and a crash mid-write leaves only the .tmp
++        # behind, never a corrupt final path.
++        # process_id at the top level (not just nested inside individual scope/
++        # forward records) so assemble_bundle.py can use the one authoritative
++        # identity throughout, instead of inventing a second "rankN" label
++        # that would never match what begin_scope/begin_forward actually
++        # stamped onto their own records.
++        payload = dict(records=self.records, overflow=self.overflow,
++                       native_pid=os.getpid(), process_id=_PROCESS_ID,
++                       backend=self.backend, **extra)
++        tmp_path = f"{path}.{os.getpid()}.tmp"
++        with open(tmp_path, "x") as f:
++            json.dump(payload, f, allow_nan=False)
++            f.flush()
++            os.fsync(f.fileno())
++        os.replace(tmp_path, path)
++
++    def confirmed_drain(self, path, capture_id):
++        """Raises rather than flushing a torn state; see module docstring
++        tier 1. One drain per buffer instance: os.replace would otherwise
++        silently overwrite a prior confirmed drain on a second call, which
++        must fail loud instead. Returns the ack payload for the
++        control-request handler to relay back to the driver."""
++        if self.drained:
++            raise RuntimeError(f"this buffer already completed a confirmed_drain (path={path!r} requested again)")
++        depth = getattr(self.local, "depth", 0)
++        if depth != 0:
++            raise RuntimeError(f"confirmed_drain called with an open marker (depth={depth}); not a safe boundary")
++        self._write_atomic(path, dict(drain_mode="confirmed", capture_id=capture_id,
++                                       open_marker_depth=0, forward_open=False))
++        self.drained = True
++        return dict(process_id=_PROCESS_ID, record_count=len(self.records),
++                    overflow=self.overflow, flush_path=path)
++
++    def emergency_flush(self, path, reason):
++        """Best-effort only; see module docstring tier 2. Never raises on bad
++        state and never claims a demonstrated safe boundary."""
++        depth = getattr(self.local, "depth", 0)
++        self._write_atomic(path, dict(drain_mode="emergency", reason=reason,
++                                       open_marker_depth=depth,
++                                       forward_open=_CURRENT_FORWARD_ID is not None))
++
++
++def enabled_buffer():
++    if os.environ.get("FRONTIER_B_MARKERS") != "1":
++        return None
++    return MarkerBuffer(os.environ["FRONTIER_B_TRACER"])
++
++
++# Process-wide singleton + call-site API. Imported once at worker process start
++# (module import time), per b_common's process-instance identity contract: an
++# opaque ID unique to this process instance, not merely the OS PID (a restart
++# must get a new identity). The manifest layer (run_b.py / a future manifest
++# builder) still owns the full process record (native PID, TP rank, GPU
++# identity) -- this is only the id this module stamps onto its own records.
++_BUFFER = enabled_buffer()
++_PROCESS_ID = f"{os.getpid()}:{time.time_ns()}"
++_CAPTURE_ID = os.environ.get("FRONTIER_B_CAPTURE_ID")
++_LABELS = {}
++_FORWARD_IDS = itertools.count()
++_SCOPE_IDS = itertools.count()
++_PENDING_SCHEDULER_FORWARD_ID = None
++_CURRENT_FORWARD_ID = None
++_MEASUREMENT_STARTED = False
++_DRAINED = False
++_FLUSH_PATH = None
++if _BUFFER is not None and os.environ.get("FRONTIER_B_OUTPUT"):
++    _FLUSH_PATH = os.path.join(os.environ["FRONTIER_B_OUTPUT"], f"metadata-pid{os.getpid()}.json")
++
++    def _atexit_flush():
++        # Tier 2 only (see module docstring): skip entirely if confirmed_drain()
++        # already ran -- an atexit flush after a confirmed drain would either
++        # collide on the same path or, worse, silently look like a second
++        # legitimate capture. Never overwrites a confirmed drain's file.
++        # Re-checks current globals (not just the definition-time snapshot)
++        # since tests reload this module repeatedly without deregistering
++        # prior atexit callbacks; a stale callback must no-op cleanly rather
++        # than raise out of its own exception handler.
++        if _DRAINED or _BUFFER is None or _FLUSH_PATH is None:
++            return
++        try:
++            _BUFFER.emergency_flush(_FLUSH_PATH, reason="atexit")
++        except Exception as e:
++            # Nothing downstream can see an exception raised from inside
++            # atexit; record the failure instead of losing it silently.
++            try:
++                with open(_FLUSH_PATH + ".atexit_error", "x") as f:
++                    f.write(f"{type(e).__name__}: {e}\n")
++            except OSError:
++                pass
++
++    atexit.register(_atexit_flush)
++
++
++def confirmed_drain(capture_id):
++    """Call only from the FrontierBDrainReqInput handler (scheduler.py), only
++    reachable from Scheduler.process_input_requests -- never from a signal
++    handler or atexit, neither of which can prove a safe boundary. Raises if
++    FRONTIER_B_OUTPUT was not set (nowhere to flush), if markers are disabled,
++    if a marker is still open, or if this process already drained once (one
++    capture window per process; a second call means something unexpected
++    wanted a second drain and should fail loud, not silently succeed)."""
++    global _DRAINED
++    if _BUFFER is None:
++        raise RuntimeError("markers are disabled; nothing to drain")
++    if _FLUSH_PATH is None:
++        raise RuntimeError("FRONTIER_B_OUTPUT not set; nowhere to flush to")
++    if _DRAINED:
++        raise RuntimeError(f"process already drained once (capture_id={_DRAINED!r} requested again as {capture_id!r})")
++    if _CAPTURE_ID is not None and capture_id != _CAPTURE_ID:
++        # Defense in depth: the driver sets FRONTIER_B_CAPTURE_ID on this same
++        # process's environment and is expected to pass the identical value to
++        # the drain endpoint. A mismatch means a wiring bug (e.g. the driver
++        # reused a stale id, or two runs' env/HTTP calls got crossed) -- fail
++        # loud rather than drain under the wrong label.
++        raise RuntimeError(f"capture_id mismatch: process env says {_CAPTURE_ID!r}, drain request says {capture_id!r}")
++    if _CURRENT_FORWARD_ID is not None:
++        raise RuntimeError("drain requested while a forward is still open; not a safe boundary")
++    # Close the native trace window at this same safe boundary, before the
++    # CPU-metadata snapshot: nothing dispatched after this point belongs to
++    # the capture this drain is finalizing.
++    _BUFFER.stop_measurement()
++    result = _BUFFER.confirmed_drain(_FLUSH_PATH, capture_id)
++    _DRAINED = capture_id
++    return result
++
++
++def _label(key):
++    """Memoized so hot-path call sites never format/encode a string per call."""
++    cached = _LABELS.get(key)
++    if cached is None:
++        cached = _BUFFER.label(key)
++        _LABELS[key] = cached
++    return cached
++
++
++def begin_scope(physical_scope, layer, variant):
++    """No-op (returns None) when markers are disabled; call sites must still
++    pass the returned handle to end_scope unconditionally.
++
++    Also appends the scope-invocation metadata record normalize_b.bind_labels
++    needs to resolve this marker's scope_id (the label itself only carries
++    physical_scope/layer/variant, not an id -- bind_labels finds the unique
++    metadata entry matching (process_id, forward_id, physical_scope, layer,
++    variant) within the enclosing B|fwd| range). Only emitted while inside an
++    active begin_forward()/end_forward() pair; a scope marker pushed outside
++    one (should not happen on any instrumented call site) still fires the
++    ROCTx range but produces no metadata, so bind_labels will correctly fail
++    it as lacking a unique forward parent/metadata match rather than silently
++    mis-attributing it.
++    """
++    if _BUFFER is None:
++        return None
++    layer_token = "model" if layer is None else str(layer)
++    if _CURRENT_FORWARD_ID is not None:
++        _BUFFER.append_cpu_metadata(dict(
++            kind="scope", process_id=_PROCESS_ID, scope_id=str(next(_SCOPE_IDS)),
++            forward_id=_CURRENT_FORWARD_ID, physical_scope=physical_scope,
++            layer=layer, variant=variant,
++        ))
++    return _BUFFER.begin(_label(f"B|scope|{physical_scope}|{layer_token}|{variant}"))
++
++
++def end_scope(handle):
++    if _BUFFER is None:
++        return
++    _BUFFER.end(handle)
++
++
++def record_scheduler_batch(phase, sequences, source_ref):
++    """Call from schedule_batch.py once per prepared batch, with a plain-dict
++    `sequences` vector built from Req fields (never from ForwardBatch). Mints
++    and returns the forward id the upcoming model forward must consume.
++
++    forward_id/global_forward_id are strings: the B|fwd|<id> marker label is
++    text, and normalize_b.bind_labels parses it back out of the label as a
++    string to match against scope/forward metadata -- an int here would
++    silently fail every match ("0" != 0). `ordinal` is kept a plain int
++    specifically because check_b.py sorts scheduler records by it
++    numerically; a string ordinal would sort "10" before "2"."""
++    global _PENDING_SCHEDULER_FORWARD_ID
++    if _BUFFER is None:
++        return None
++    ordinal = next(_FORWARD_IDS)
++    forward_id = str(ordinal)
++    _BUFFER.append_cpu_metadata(dict(
++        kind="scheduler", global_forward_id=forward_id, ordinal=ordinal,
++        phase=phase, sequences=sequences, source_ref=source_ref,
++    ))
++    _PENDING_SCHEDULER_FORWARD_ID = forward_id
++    return forward_id
++
++
++def _forward_sequences(forward_batch):
++    """Built only from ForwardBatch's already-CPU-resident fields
++    (seq_lens_cpu, extend_seq_lens_cpu, extend_prefix_lens_cpu, rids) -- no
++    device sync, no .cpu() call, matching the no-synchronization-on-the-
++    measured-path requirement. Returns (phase, sequences) or (None, None) for
++    a forward_mode this hook does not yet cover (e.g. true MIXED batches)."""
++    fm = forward_batch.forward_mode
++    rids = forward_batch.rids
++    # Duck-typed on ForwardMode's own helper methods (is_decode/is_mixed/
++    # is_extend) rather than importing the enum, so this module stays
++    # dependency-light and importable outside any SGLang context (tests).
++    if fm.is_mixed():
++        # True MIXED batches need per-sequence kind disambiguation (the
++        # 1-token rows riding inside the extend kernel are decodes); not yet
++        # implemented.
++        return None, None
++    if fm.is_decode():
++        seq_lens_cpu = forward_batch.seq_lens_cpu
++        sequences = [
++            dict(request_id=rids[i], kind="decode", query_len=1,
++                 prefix_len=int(seq_lens_cpu[i]) - 1, attended_len=int(seq_lens_cpu[i]))
++            for i in range(forward_batch.batch_size)
++        ]
++        return "decode", sequences
++    if fm.is_extend():
++        # Covers EXTEND and (out of this recipe's scope) TARGET_VERIFY /
++        # SPLIT_PREFILL / DLLM_EXTEND, which is_extend() also reports true for.
++        prefix = forward_batch.extend_prefix_lens_cpu
++        qlen = forward_batch.extend_seq_lens_cpu
++        sequences = [
++            dict(request_id=rids[i], kind="prefill", query_len=int(qlen[i]),
++                 prefix_len=int(prefix[i]), attended_len=int(prefix[i]) + int(qlen[i]))
++            for i in range(forward_batch.batch_size)
++        ]
++        return "prefill", sequences
++    return None, None
++
++
++def begin_forward(forward_batch=None):
++    global _PENDING_SCHEDULER_FORWARD_ID, _CURRENT_FORWARD_ID, _MEASUREMENT_STARTED
++    if _BUFFER is None:
++        return None
++    if not _MEASUREMENT_STARTED:
++        # Opens the native trace window on the very first forward this
++        # process measures -- everything before this point (weight loading,
++        # AITER/Triton first-dispatch JIT compilation) is never recorded by
++        # rocprofv3 at all (see MarkerBuffer's roctxProfilerPause/Resume
++        # note), so it cannot show up as unattributed kernels downstream.
++        _BUFFER.start_measurement()
++        _MEASUREMENT_STARTED = True
++    forward_id = _PENDING_SCHEDULER_FORWARD_ID
++    if forward_id is None:
++        # Same string requirement as record_scheduler_batch: forward_id must
++        # match the B|fwd|<id> label text's parsed type.
++        forward_id = str(next(_FORWARD_IDS))
++    else:
++        _PENDING_SCHEDULER_FORWARD_ID = None
++    if forward_batch is not None:
++        phase, sequences = _forward_sequences(forward_batch)
++        if phase is not None:
++            _BUFFER.append_cpu_metadata(dict(
++                kind="forward", process_id=_PROCESS_ID,
++                forward_id=forward_id, global_forward_id=forward_id,
++                phase=phase, execution="eager", sequences=sequences,
++                padded_tokens=int(forward_batch.input_ids.shape[0]),
++                padded_batch_size=forward_batch.batch_size,
++            ))
++    if _CURRENT_FORWARD_ID is not None:
++        raise RuntimeError("nested begin_forward: forwards do not nest")
++    _CURRENT_FORWARD_ID = forward_id
++    # Free clock-calibration anchor: every B|fwd| push is a host-bracketed
++    # native-trace event with zero extra overhead (no separate calibration
++    # kernel/marker). trace_ns is recovered later by matching this forward_id
++    # to the B|fwd|<id> row's Start_Timestamp in the marker CSV; calibrate_b.py
++    # needs >=3 of these, and a real run has one per forward (dozens+), enough
++    # to fit on most and hold out the rest for validation.
++    host_begin_ns = time.monotonic_ns()
++    handle = _BUFFER.begin(_label(f"B|fwd|{forward_id}"))
++    host_end_ns = time.monotonic_ns()
++    _BUFFER.append_cpu_metadata(dict(
++        kind="calibration_anchor", forward_id=forward_id,
++        host_begin_ns=host_begin_ns, host_end_ns=host_end_ns,
++    ))
++    return handle
++
++
++def end_forward(handle):
++    global _CURRENT_FORWARD_ID
++    _CURRENT_FORWARD_ID = None
++    end_scope(handle)
+--- a/python/sglang/srt/models/qwen3_moe.py
++++ b/python/sglang/srt/models/qwen3_moe.py
+@@ -33,6 +33,12 @@
+ from sglang.srt.eplb.expert_distribution import get_global_expert_distribution_recorder
+ from sglang.srt.eplb.expert_location import ModelConfigForExpertLocation
+ from sglang.srt.eplb.expert_location_dispatch import ExpertLocationDispatchInfo
++from sglang.srt.frontier_b_markers import (
++    begin_forward,
++    begin_scope,
++    end_forward,
++    end_scope,
++)
+ from sglang.srt.layers.communicator import LayerCommunicator, LayerScatterModes
+ from sglang.srt.layers.cp.utils import is_cp_v2_active
+ from sglang.srt.layers.layernorm import RMSNorm
+@@ -64,7 +70,11 @@
+     prepare_context_parallel_metadata,
+ )
+ from sglang.srt.layers.vocab_parallel_embedding import ParallelLMHead
+-from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
++from sglang.srt.model_executor.forward_batch_info import (
++    ForwardBatch,
++    ForwardMode,
++    PPProxyTensors,
++)
+ from sglang.srt.model_loader.weight_utils import default_weight_loader
+ from sglang.srt.models.qwen2_moe import Qwen2MoeMLP as Qwen3MoeMLP
+ from sglang.srt.models.qwen2_moe import Qwen2MoeModel
+@@ -589,14 +599,19 @@
+         hidden_states: torch.Tensor,
+         forward_batch: ForwardBatch,
+     ):
++        # B|scope|qkv_qk_norm: starts around the GEMM; apply_qk_norm_rope ends it
++        # right after the norm step and (on the non-fused HIP path) opens a
++        # separate B|scope|rope_kv around the fused RoPE+KV-write call. Frontier
++        # Dataset B instrumentation; see dataset_b/sglang_b_markers.patch.
++        _b_qkv_handle = begin_scope("qkv_qk_norm", self.attn.layer_id, "compound")
+         qkv, _ = self.qkv_proj(hidden_states)
+ 
+-        q, k, v = self.apply_qk_norm_rope(qkv, positions, forward_batch)
++        q, k, v = self.apply_qk_norm_rope(qkv, positions, forward_batch, _b_qkv_handle)
+ 
+         inner_state = q, k, v, forward_batch
+         return None, forward_batch, inner_state
+ 
+-    def apply_qk_norm_rope(self, qkv, positions, forward_batch):
++    def apply_qk_norm_rope(self, qkv, positions, forward_batch, _b_qkv_handle=None):
+         use_fused = self.use_fused_qk_norm_rope and qkv.dtype == torch.bfloat16
+         if use_fused:
+             theta = self.rope_theta
+@@ -623,6 +638,11 @@
+             )
+             q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+             self._used_fused_qk_norm_rope_last_call = True
++            # fused_qk_norm_rope is CUDA-only (server_args default False, requires
++            # _is_cuda) and never runs on this HIP/AITER recipe; no B|scope|rope_kv
++            # split is meaningful here, so qkv_qk_norm just closes over the whole
++            # fused norm+rope kernel.
++            end_scope(_b_qkv_handle)
+         else:
+             # Fallback to non-fused QK Norm & RoPE implementation
+             q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+@@ -634,6 +654,14 @@
+                 head_dim=self.head_dim,
+                 alt_stream=self.alt_stream,
+             )
++            end_scope(_b_qkv_handle)
++            # Unconditional on HIP for non-MRoPE models: rotary_emb's forward
++            # dispatches to the fused Triton kernel that does RoPE on q,k AND
++            # writes K/V into the paged cache in one pass whenever
++            # fused_set_kv_buffer_arg is not None -- this one marker covers the
++            # single physical unit that corresponds to both A's attn_rope and
++            # attn_kv_cache_save labels (scope_spec.json: physical_scope "rope_kv").
++            _b_rope_handle = begin_scope("rope_kv", self.attn.layer_id, "fused")
+             q, k = self.rotary_emb(
+                 positions,
+                 q,
+@@ -649,6 +677,7 @@
+                     else None
+                 ),
+             )
++            end_scope(_b_rope_handle)
+             self._used_fused_qk_norm_rope_last_call = False
+         return q, k, v
+ 
+@@ -685,6 +714,28 @@
+             enable_fused_set_kv_buffer(forward_batch)
+             and self.compatible_with_fused_kv_buffer
+         )
++        # Attention-core scope: self.attn() dispatches into the aiter backend's
++        # forward_extend/forward_decode, including the image's required output-fill
++        # kernel ahead of the prefill kernel -- preserved inside this boundary
++        # rather than instrumenting aiter_backend.py directly (dataset_b: do not
++        # force unfused/separated kernels to restore a boundary the backend
++        # doesn't expose). Only EXTEND/DECODE/MIXED are locked by this recipe
++        # (no speculative decoding / PD-disaggregation / dLLM); any other mode
++        # is left unmarked rather than guessing a label.
++        fm = fb.forward_mode
++        if fm.is_decode():
++            _b_attn_scope = "attention_decode"
++        elif fm.is_mixed():
++            _b_attn_scope = "attention_mixed"
++        elif fm == ForwardMode.EXTEND:
++            _b_attn_scope = "attention_prefill"
++        else:
++            _b_attn_scope = None
++        _b_attn_handle = (
++            begin_scope(_b_attn_scope, self.attn.layer_id, "native")
++            if _b_attn_scope is not None
++            else None
++        )
+         attn_output = self.attn(
+             q,
+             k,
+@@ -692,7 +743,10 @@
+             fb,
+             save_kv_cache=save_kv_cache,
+         )
++        end_scope(_b_attn_handle)
++        _b_oproj_handle = begin_scope("output_projection", self.attn.layer_id, "gemm_only")
+         output, _ = self.o_proj(attn_output)
++        end_scope(_b_oproj_handle)
+         return output
+ 
+     def forward(
+@@ -797,6 +851,10 @@
+             allow_reduce_scatter=True,
+             is_last_layer=(self.layer_id == self.config.num_hidden_layers - 1),
+         )
++        # Dataset B instrumentation needs the layer index at the norm call sites
++        # inside LayerCommunicator (prepare_attn/prepare_mlp); it is not otherwise
++        # available there.
++        self.layer_communicator.layer_id = self.layer_id
+ 
+     def forward(
+         self,
+@@ -1005,6 +1063,10 @@
+                     extend_seqs_len=forward_batch.extend_seq_lens_cpu,
+                 )
+ 
++        # B|fwd|<n>: encloses every per-layer/embedding scope below; nesting is
++        # resolved later purely by timestamp containment (normalize_b.bind_labels),
++        # so this is the only place a forward boundary needs to be marked.
++        _b_fwd_handle = begin_forward(forward_batch)
+         hidden_states = self.model(
+             input_ids,
+             positions,
+@@ -1012,6 +1074,7 @@
+             input_embeds,
+             pp_proxy_tensors=pp_proxy_tensors,
+         )
++        end_forward(_b_fwd_handle)
+ 
+         aux_hidden_states = None
+         if self.capture_aux_hidden_states:
+--- a/python/sglang/srt/models/qwen2_moe.py
++++ b/python/sglang/srt/models/qwen2_moe.py
+@@ -40,6 +40,7 @@
+ from sglang.srt.eplb.expert_location import ModelConfigForExpertLocation
+ from sglang.srt.eplb.expert_location_dispatch import ExpertLocationDispatchInfo
+ from sglang.srt.layers.activation import SiluAndMul
++from sglang.srt.frontier_b_markers import begin_scope, end_scope
+ from sglang.srt.layers.communicator import (
+     LayerCommunicator,
+     LayerScatterModes,
+@@ -819,6 +820,10 @@
+             post_attention_layernorm=self.post_attention_layernorm,
+             allow_reduce_scatter=True,
+         )
++        # Dataset B instrumentation needs the layer index at the norm call sites
++        # inside LayerCommunicator (prepare_attn/prepare_mlp); it is not otherwise
++        # available there.
++        self.layer_communicator.layer_id = self.layer_id
+ 
+     def forward(
+         self,
+@@ -938,7 +943,14 @@
+     ) -> Union[torch.Tensor, PPProxyTensors]:
+         if self.pp_group.is_first_rank:
+             if input_embeds is None:
++                # Once per forward, first PP rank only (never per-layer); TP-shard
++                # behavior (plain TP1 gather vs TP>1 mask+gather+all-reduce) is
++                # whatever VocabParallelEmbedding does internally -- a single
++                # "tp_native" variant covers both, since the boundary (one call)
++                # is what Dataset B marks, not the kernel count inside it.
++                _b_emb_handle = begin_scope("embedding", None, "tp_native")
+                 hidden_states = self.embed_tokens(input_ids)
++                end_scope(_b_emb_handle)
+             else:
+                 hidden_states = input_embeds
+             residual = None
+--- a/python/sglang/srt/layers/communicator.py
++++ b/python/sglang/srt/layers/communicator.py
+@@ -20,6 +20,7 @@
+ 
+ import torch
+ 
++from sglang.srt.frontier_b_markers import begin_scope, end_scope
+ from sglang.srt.distributed import (
+     attention_tensor_model_parallel_all_reduce,
+     attention_tensor_model_parallel_quant_all_reduce,
+@@ -612,9 +613,13 @@
+                         )
+                 else:
+                     hidden_states = moe_tensor_model_parallel_all_reduce(hidden_states)
++                    # Communication (the all-reduce above) excluded from the scope;
++                    # only the norm call itself is marked.
++                    _b_norm_handle = begin_scope("input_norm", self.layer_id, "add_norm")
+                     hidden_states, residual = self.input_layernorm(
+                         hidden_states, residual
+                     )
++                    end_scope(_b_norm_handle)
+             else:
+                 if residual is None:
+                     residual = hidden_states
+@@ -667,7 +672,11 @@
+                         )
+ 
+                     else:
++                        # Layer 0: norm-only, no residual add (residual was just
++                        # set to hidden_states above, not consumed by the call).
++                        _b_norm_handle = begin_scope("input_norm", self.layer_id, "norm_only")
+                         hidden_states = self.input_layernorm(hidden_states)
++                        end_scope(_b_norm_handle)
+                 else:
+                     if _use_aiter and _is_gfx95_supported and ("mxfp4" in quant_format):
+                         hidden_states, *_, residual = fused_rms_mxfp4_quant(
+@@ -719,11 +728,13 @@
+                             residual=residual,
+                         )
+                     else:
++                        _b_norm_handle = begin_scope("input_norm", self.layer_id, "add_norm")
+                         hidden_states, residual = self.input_layernorm(
+                             hidden_states,
+                             residual,
+                             post_residual_addition,
+                         )
++                        end_scope(_b_norm_handle)
+ 
+         hidden_states = self._communicate_simple_fn(
+             hidden_states=hidden_states,
+@@ -766,6 +777,10 @@
+         if cache is not None:
+             self._context.cache = cache
+ 
++        # The dispatch targets below are @staticmethod (no `self`); stash the
++        # layer index on the shared context so they can label their norm scope
++        # correctly. Set fresh on every call in case _context is reused.
++        self._context.layer_id = self.layer_id
+         return self._communicate_with_all_reduce_and_layer_norm_fn(
+             hidden_states=hidden_states,
+             residual=residual,
+@@ -1073,7 +1088,14 @@
+     ):
+         # TODO move these `if shape != 0` into LayerNorm itself
+         if hidden_states.shape[0] != 0:
++            # `layernorm` is whichever module the caller passed; prepare_mlp is
++            # this dispatch function's only caller, always with
++            # post_attention_layernorm, so "post_norm" is unambiguous here.
++            _b_norm_handle = begin_scope(
++                "post_norm", getattr(context, "layer_id", None), "add_norm"
++            )
+             hidden_states, residual = layernorm(hidden_states, residual)
++            end_scope(_b_norm_handle)
+         return hidden_states, residual
+ 
+     @staticmethod
+@@ -1175,7 +1197,16 @@
+                     )
+                 if _is_npu and context.cache is not None:
+                     _ = prepare_weight_cache(hidden_states, context.cache)
++                # Communication (the all-reduce above) excluded; only the norm
++                # call is marked. This is the plain TP>1, no-DP-attention,
++                # no-AR-fusion path (dataset_b's locked collection recipe); the
++                # DP-attention and AR-fusion branches above are out of scope for
++                # this recipe and are left unmarked.
++                _b_norm_handle = begin_scope(
++                    "post_norm", getattr(context, "layer_id", None), "add_norm"
++                )
+                 hidden_states, residual = layernorm(hidden_states, residual)
++                end_scope(_b_norm_handle)
+         return hidden_states, residual
+ 
+     @staticmethod
+--- a/python/sglang/srt/managers/schedule_batch.py
++++ b/python/sglang/srt/managers/schedule_batch.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ from sglang.srt.dllm.config import DllmConfig
++from sglang.srt.frontier_b_markers import record_scheduler_batch
+ from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+ from sglang.srt.runtime_context import (
+     get_disagg,
+@@ -2386,6 +2387,24 @@
+         orig_seq_lens = [max(r.extend_range.end, len(r.origin_input_ids)) for r in reqs]
+         prefix_lens = [len(r.prefix_indices) for r in reqs]
+         extend_lens = [r.extend_range.length for r in reqs]
++        # Dataset B: independent CPU-side observation, built from Req fields
++        # (prefix_indices/extend_range/rid) before any tensor derivation --
++        # deliberately not reused from the seq_lens/prefix_lens locals above so
++        # that normalize_b/check_b's cross-check against ForwardBatch's later
++        # derivation is meaningful. Mixed (EXTEND containing decode rows riding
++        # as 1-token extends) is not disambiguated here; plain "prefill" is
++        # only correct for this recipe's non-mixed-chunk extend batches.
++        record_scheduler_batch(
++            "prefill",
++            [
++                dict(request_id=r.rid, kind="prefill",
++                     query_len=r.extend_range.length,
++                     prefix_len=len(r.prefix_indices),
++                     attended_len=len(r.prefix_indices) + r.extend_range.length)
++                for r in reqs
++            ],
++            "schedule_batch.py:prepare_for_extend",
++        )
+         extend_logprob_start_lens = [
+             compute_extend_logprob_start_len(
+                 logprob_start_len=r.logprob_start_len,
+@@ -3088,6 +3107,21 @@
+         # overlap forward.
+         self.seq_lens = self.seq_lens + 1
+         self.seq_lens_cpu = self.seq_lens_cpu + 1
++        # Dataset B: independent CPU-side observation (plain-tensor .tolist(),
++        # no device sync since seq_lens_cpu already lives on host) before
++        # ForwardBatch is built from this same ScheduleBatch. Not reached by
++        # the speculative-decoding early return above -- out of scope for this
++        # recipe (no spec_decode).
++        _b_seq_lens_cpu = self.seq_lens_cpu.tolist()
++        record_scheduler_batch(
++            "decode",
++            [
++                dict(request_id=r.rid, kind="decode", query_len=1,
++                     prefix_len=_b_seq_lens_cpu[i] - 1, attended_len=_b_seq_lens_cpu[i])
++                for i, r in enumerate(self.reqs)
++            ],
++            "schedule_batch.py:prepare_for_decode",
++        )
+         self.orig_seq_lens = self.orig_seq_lens + 1
+         # Sum is recomputed lazily by ForwardBatch.init_new.
+         self.seq_lens_sum = None
+--- a/python/sglang/srt/managers/io_struct.py
++++ b/python/sglang/srt/managers/io_struct.py
+@@ -2310,6 +2310,28 @@
+     error: str = ""
+ 
+ 
++class FrontierBDrainReqInput(BaseReq, kw_only=True):
++    """Dataset B: explicit, acknowledged end-of-measurement control. Broadcast
++    across TP ranks via the normal recv path, exactly like ShutdownReq, and
++    handled only from Scheduler.process_input_requests -- i.e. at the top of
++    the event loop, strictly between forward passes, never mid-forward. One
++    drain per process per capture; a scheduler process that receives this
++    before any confirmed_drain() closes its own capture window and snapshots
++    its buffered Dataset B metadata."""
++    capture_id: str
++
++
++class FrontierBDrainReqOutput(BaseReq, kw_only=True):
++    success: bool
++    process_id: str = ""
++    rank: int = -1
++    capture_id: str = ""
++    record_count: int = 0
++    overflow: bool = False
++    flush_path: str = ""
++    error: str = ""
++
++
+ # The following request types are either defined in other files,
+ # or not subclasses of BaseReq/BaseBatchReq, so we skip the check for them.
+ _IGNORE_REQ_TYPES_CHECK = (
+--- a/python/sglang/srt/managers/scheduler.py
++++ b/python/sglang/srt/managers/scheduler.py
+@@ -131,6 +131,8 @@
+     DetachHiCacheStorageReqInput,
+     DetachHiCacheStorageReqOutput,
+     DumperControlReqInput,
++    FrontierBDrainReqInput,
++    FrontierBDrainReqOutput,
+     DumperControlReqOutput,
+     ExpertDistributionReq,
+     ExpertDistributionReqOutput,
+@@ -1626,6 +1628,7 @@
+                 (ConfigureLoggingReq, self.configure_logging),
+                 (ScaleElasticEPReqInput, self.handle_scale_elastic_ep),
+                 (DumperControlReqInput, self.handle_dumper_control),
++                (FrontierBDrainReqInput, self.handle_frontier_b_drain),
+                 (AddExternalCorpusReqInput, self.add_external_corpus),
+                 (
+                     RemoveExternalCorpusReqInput,
+@@ -4934,6 +4937,41 @@
+                 recv_req,
+             )
+ 
++    def handle_frontier_b_drain(self, recv_req: FrontierBDrainReqInput):
++        """Dataset B: called only from process_input_requests, i.e. at the top
++        of the event loop between forward passes -- never mid-forward (see
++        FrontierBDrainReqInput's docstring and marker_runtime.py's). Every
++        rank drains its own buffer independently and acks independently; the
++        driver (run_b.py), not this handler, is responsible for verifying it
++        received one ack per rank before sending any termination signal."""
++        from sglang.srt.frontier_b_markers import confirmed_drain
++
++        try:
++            result = confirmed_drain(recv_req.capture_id)
++            self.ipc_channels.send_to_tokenizer.send_output(
++                FrontierBDrainReqOutput(
++                    success=True,
++                    process_id=result["process_id"],
++                    rank=self.ps.tp_rank,
++                    capture_id=recv_req.capture_id,
++                    record_count=result["record_count"],
++                    overflow=result["overflow"],
++                    flush_path=result["flush_path"],
++                ),
++                recv_req,
++            )
++        except Exception as e:
++            print(f"[Scheduler] handle_frontier_b_drain error: {e}", flush=True)
++            self.ipc_channels.send_to_tokenizer.send_output(
++                FrontierBDrainReqOutput(
++                    success=False,
++                    rank=self.ps.tp_rank,
++                    capture_id=recv_req.capture_id,
++                    error=str(e),
++                ),
++                recv_req,
++            )
++
+     # placeholder for override
+     def update_cache_from_scheduler(
+         self, schedule_batch: ScheduleBatch, batch_result: GenerationBatchResult
+--- a/python/sglang/srt/managers/tokenizer_manager.py
++++ b/python/sglang/srt/managers/tokenizer_manager.py
+@@ -69,6 +69,8 @@
+     ElasticScaleUpdateReq,
+     EmbeddingReqInput,
+     FreezeGCReq,
++    FrontierBDrainReqInput,
++    FrontierBDrainReqOutput,
+     GenerateReqInput,
+     HealthCheckOutput,
+     LoadLoRAAdapterReqInput,
+@@ -750,6 +752,7 @@
+                     self._handle_update_weights_from_disk_req_output,
+                 ),
+                 (FreezeGCReq, lambda x: None),
++                (FrontierBDrainReqOutput, self._handle_frontier_b_drain_output),
+                 # For handling case when scheduler skips detokenizer and forwards back to the tokenizer manager, we ignore it.
+                 (HealthCheckOutput, lambda x: None),
+                 # Same skip-detokenizer forwarding case as above.
+@@ -763,6 +766,11 @@
+         self.sampling_params_class = SamplingParams
+         self.signal_handler_class = SignalHandler
+ 
++        # Dataset B: see frontier_b_drain() / _handle_frontier_b_drain_output().
++        self.frontier_b_drain_result = None
++        self.frontier_b_drain_expected = 0
++        self.frontier_b_drain_tmp = []
++
+     async def generate_request(
+         self,
+         obj: Union[GenerateReqInput, EmbeddingReqInput],
+@@ -3305,6 +3313,30 @@
+             if len(self.model_update_tmp) == self.model_update_expected_workers:
+                 self.model_update_result.set_result(self.model_update_tmp)
+ 
++    async def frontier_b_drain(self, capture_id: str, timeout_s: float = 60.0):
++        """Dataset B: broadcast FrontierBDrainReqInput to every TP rank and
++        wait for every rank's own ack before returning. Returns the list of
++        FrontierBDrainReqOutput acks (one per rank) on success; raises
++        asyncio.TimeoutError if any rank does not ack in time, and the driver
++        (run_b.py) must treat that as a hard failure, never send a
++        termination signal, and preserve what state exists for diagnosis."""
++        self.auto_create_handle_loop()
++        self.frontier_b_drain_expected = self.server_args.tp_size
++        self.frontier_b_drain_tmp = []
++        self.frontier_b_drain_result = asyncio.Future()
++        self._dispatch_to_scheduler(FrontierBDrainReqInput(capture_id=capture_id))
++        acks = await asyncio.wait_for(self.frontier_b_drain_result, timeout=timeout_s)
++        return acks
++
++    def _handle_frontier_b_drain_output(self, recv_obj):
++        if self.frontier_b_drain_result is None or self.frontier_b_drain_result.done():
++            # A stale/duplicate ack with no waiter; do not raise out of the
++            # IPC receive loop over it.
++            return
++        self.frontier_b_drain_tmp.append(recv_obj)
++        if len(self.frontier_b_drain_tmp) >= self.frontier_b_drain_expected:
++            self.frontier_b_drain_result.set_result(list(self.frontier_b_drain_tmp))
++
+     async def _validate_and_resolve_lora(
+         self, obj: Union[GenerateReqInput, EmbeddingReqInput]
+     ) -> None:
+--- a/python/sglang/srt/entrypoints/http_server.py
++++ b/python/sglang/srt/entrypoints/http_server.py
+@@ -981,6 +981,53 @@
+     )
+ 
+ 
++@app.post("/frontier_b_drain")
++@auth_level(AuthLevel.ADMIN_OPTIONAL)
++async def frontier_b_drain(request: Request):
++    """Dataset B: explicit, acknowledged end-of-measurement drain. Broadcasts
++    to every TP rank's scheduler and waits for every rank's own ack
++    (FrontierBDrainReqOutput) before returning. The caller (run_b.py) must
++    treat a non-200 response, a timeout, or any ack with success=false as a
++    hard failure and must not send a termination signal in that case -- this
++    endpoint intentionally does not attempt shutdown itself."""
++    try:
++        body = await request.json()
++        capture_id = body["capture_id"]
++    except (TypeError, KeyError, ValueError) as e:
++        return ORJSONResponse(
++            {"success": False, "message": f"invalid request body: {e}"},
++            status_code=HTTPStatus.BAD_REQUEST,
++        )
++    try:
++        acks = await _global_state.tokenizer_manager.frontier_b_drain(capture_id)
++    except asyncio.TimeoutError:
++        return ORJSONResponse(
++            {"success": False, "message": "timed out waiting for all ranks to ack the drain"},
++            status_code=HTTPStatus.GATEWAY_TIMEOUT,
++        )
++    all_success = all(a.success for a in acks)
++    return ORJSONResponse(
++        {
++            "success": all_success,
++            "capture_id": capture_id,
++            "acks": [
++                {
++                    "success": a.success,
++                    "process_id": a.process_id,
++                    "rank": a.rank,
++                    "capture_id": a.capture_id,
++                    "record_count": a.record_count,
++                    "overflow": a.overflow,
++                    "flush_path": a.flush_path,
++                    "error": a.error,
++                }
++                for a in acks
++            ],
++        },
++        status_code=200 if all_success else HTTPStatus.INTERNAL_SERVER_ERROR,
++    )
++
++
+ @app.post("/add_external_corpus")
+ @auth_level(AuthLevel.ADMIN_OPTIONAL)
+ async def add_external_corpus(request: Request):

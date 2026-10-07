@@ -1,0 +1,7 @@
+{
+  "pci:0000:05:00.0": {
+    "max_holdout_residual_ns": 4365,
+    "n_fit": 16,
+    "n_holdout": 3
+  }
+}

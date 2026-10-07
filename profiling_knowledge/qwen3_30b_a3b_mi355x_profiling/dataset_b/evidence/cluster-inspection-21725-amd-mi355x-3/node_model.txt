@@ -1,0 +1,6 @@
+amd-mi355x-3
+uid=1001(dn) gid=1002(dn) groups=1002(dn),27(sudo),44(video),110(render),1001(docker)
+SLURM_JOB_ID=21725
+IMAGE_ID=sha256:dece67677b2b6cfae2aa12a546fab317a1499745d4ec866c45b9bd4ea0fc0bde
+MODEL=/mnt/data/data/hai/hai2/models/Qwen3-30B-A3B
+MODEL CONFIG NOT ACCESSIBLE ON THIS NODE

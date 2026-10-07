@@ -1,0 +1,20 @@
+{
+  "dataset_a_scope_names": [
+    "attention_decode",
+    "attention_mixed",
+    "attention_prefill",
+    "embedding",
+    "input_norm",
+    "output_projection",
+    "post_norm",
+    "qkv_qk_norm",
+    "rope_kv"
+  ],
+  "in_scope_kernels": 3659,
+  "in_scope_scope_invocations": 2312,
+  "out_of_scope_attribution": {
+    "unresolved": 2150
+  },
+  "out_of_scope_kernels": 2150,
+  "structural_pass": true
+}

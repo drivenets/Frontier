@@ -1,0 +1,30 @@
+{
+  "provenance": "Recovered locally from the other investigation session; not independently downloaded or executed by Dataset B agent.",
+  "source_wheel": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/db1e20c0-4a82-4c09-82b8-2f514df5a540/scratchpad/image_wheel/sglang-0.5.18-cp312-cp312-linux_x86_64.whl",
+  "wheel_sha256": "3706017cd830b60144cc964015275257d672f6811e58bcf6e2dfe064b360d75c",
+  "reported_registry_manifest_digest": "sha256:d8e0eb9c3211b593fbd574ada06e03d48d956c159bb9b6c123f4d86c12d8e6dc",
+  "reported_config_blob": "sha256:dece67677b2b6cfae2aa12a546fab317a1499745d4ec866c45b9bd4ea0fc0bde",
+  "registry_evidence": "../../../operator_boundary_investigation/evidence/E5_image_and_sglang_source_verification.md",
+  "files_sha256": {
+    "sglang/srt/models/qwen3_moe.py": "7c559324111dfdc6927e97d13e31d5ff7b23bf7efa4d4fa33d636c026212bb05",
+    "sglang/srt/models/qwen2_moe.py": "20467a642243f2160f34381c31468b85c60c33316e4a33b38c07be3ac53424df",
+    "sglang/srt/models/utils.py": "7a05f7b446086ea6427b562b895355c1dd5b0b2b2563467d8daf11bcbfa979d1",
+    "sglang/srt/layers/communicator.py": "7305647bba46a6cfac7b1eef10a0c4f4ca89e802cd4a1d045774e8e47db0481f",
+    "sglang/srt/layers/layernorm.py": "cca629524c065d0b298167fb21c4da3786b380f0771799e8f3d0a1a4b31084bb",
+    "sglang/srt/layers/rotary_embedding/base.py": "dc4d4ddf9a0d2b90f2108e0b5888f27822a5c6adcd83d966d9f10f6581504028",
+    "sglang/srt/layers/attention/aiter_backend.py": "6c4f37fdad6d990a0a03739574a11f732fc811d63f7930c8b1529ab921055d8b",
+    "sglang/srt/layers/vocab_parallel_embedding.py": "c2c8d349cc9ae84b1c7e8fd1a8de6bc45c495302950b64b145023cb2580215c0",
+    "sglang/srt/layers/quantization/unquant.py": "90da612bbc332135c57bea19ab3d9b69498c8009d6adba1b7e5b1b6562aab757",
+    "sglang/srt/mem_cache/memory_pool.py": "41e87128dbdf9178dad65f695e7a98428ecfeebc1e3407fee57df5067f4205c3",
+    "sglang/srt/model_executor/model_runner.py": "05a58877a2d4eb366cafe0577bf5318c44be583115cdde062f7d1e54816d24ed",
+    "sglang/srt/model_executor/forward_batch_info.py": "33755cc114c2b7aec62a57688c92507aa86f12bcc7fd3e1ea0c674ed64600875",
+    "sglang/srt/model_executor/runner/decode_cuda_graph_runner.py": "7800f5136ba70adcf040e3fc118b030bac3ae9a1a34c6769f0aea0c59bd71599",
+    "sglang/srt/model_executor/runner/eager_runner.py": "1bdb8cfec2c9f63b2467ad54519af92f184e84a26bcaa5bcf1364b208ad97008",
+    "sglang/srt/managers/scheduler.py": "d45173c87b10f9c3b5c48a98ce932b8bb4fbb6fe1d6820efa9f3accfa13d0228",
+    "sglang/srt/managers/schedule_batch.py": "2d62ac813c07fedd219dfcd89333856390157a3385464c779de5892e8d170a4d",
+    "sglang/srt/server_args.py": "0b2ed81bbbe1cca5df5d6e92605ed0132a47a7cde1067c4401ed10d134e10b7e",
+    "sglang/srt/entrypoints/http_server.py": "305a02a9238b62da90c9dc90ecbbdc0811ba7725f13056677e3ed7dbbfc81d4e",
+    "sglang/srt/managers/io_struct.py": "cc022f58fe2468fb6231c1e65a41106cbc0d73fe1bd784d6f57df94a412564a9",
+    "sglang/srt/environ.py": "e64b24813f8dc9af30644ce348642adbfb4fe6365a7d6e0044347439e5ecd1ed"
+  }
+}

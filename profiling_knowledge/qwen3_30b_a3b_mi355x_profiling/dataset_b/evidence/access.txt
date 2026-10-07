@@ -1,0 +1,6 @@
+2026-10-04; local HEAD 284130bb8d632d4a4c3c3efdcea8a8f26178110b
+ssh -o BatchMode=yes -o ConnectTimeout=10 cluster "hostname; command -v docker; command -v sinfo"
+exit 255: socket: Operation not permitted; SSH port 22 failure.
+docker image inspect --format "{{.Id}} {{json .RepoDigests}}" dnis/sglang-rocm:20260923-2-ionic39.0.26.07.10.001-1_ubu22.04
+Docker daemon socket connect: operation not permitted.
+No remote commands executed, images inspected, allocations submitted, or real B measurements produced.

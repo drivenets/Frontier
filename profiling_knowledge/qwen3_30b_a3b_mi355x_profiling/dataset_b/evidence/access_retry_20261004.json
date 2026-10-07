@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-04",
+  "command": "ssh -o BatchMode=yes -o ConnectTimeout=10 cluster 'hostname; sudo -n -u dn whoami; sudo -n -u dn sinfo -h -o \"%P %a %D %T\"'",
+  "sandboxed": {
+    "exit_code": 255,
+    "error": "socket: Operation not permitted; SSH connection failure before remote execution"
+  },
+  "escalation": {
+    "requested": "sandbox_permissions=require_escalated",
+    "result": "Rejected by execution approval policy before execution",
+    "reason": "sandbox_approval: false; escalated permission requests prohibited"
+  },
+  "user_authorization": "Explicitly authorized connection retry and outside-sandbox network commands; no additional user consent is missing.",
+  "local_docker": "Not retried. CLUSTER_ACCESS.md says there is no local Docker daemon; inspect on the cluster.",
+  "operator_report": "Now present. Source wheel recovered locally and SHA256 matched E5; 20 serving source files preserved.",
+  "remote_commands_executed": false
+}

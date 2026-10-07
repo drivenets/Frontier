@@ -1,0 +1,36 @@
+{
+  "clock_states": {
+    "valid_context": 208
+  },
+  "data_kind": "synthetic_fixture",
+  "dataset_accepted": false,
+  "excluded_kernels": 8,
+  "limitations": [
+    "Clock values are sampled context, not instantaneous per-kernel clock measurements.",
+    "Physical/A mapping is provisional; no complete B coverage claim.",
+    "b0.1 checks eager structure only; full Dataset B acceptance requires replay and cross-run pilot validation."
+  ],
+  "missing_live_evidence": [
+    "image_digest",
+    "source_hashes",
+    "patch_sha256",
+    "effective_config",
+    "model_revision",
+    "tokenizer_revision",
+    "numerical_equivalence_ref",
+    "perturbation_ref",
+    "tracer_crosscheck_ref",
+    "rank_device_evidence_ref"
+  ],
+  "observed_forwards": 2,
+  "parquet_written": false,
+  "rank_forwards": 8,
+  "ranks": 4,
+  "raw_kernels": 216,
+  "requests": 2,
+  "run_id": "SYNTHETIC-ONLY",
+  "schema_version": "b0.1",
+  "scopes": 104,
+  "structural_pass": true,
+  "target_kernels": 208
+}

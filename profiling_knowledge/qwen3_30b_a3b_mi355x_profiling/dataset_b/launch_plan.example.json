@@ -1,0 +1,31 @@
+{
+  "approved_image": "dnis/sglang-rocm:20260923-2-ionic39.0.26.07.10.001-1_ubu22.04",
+  "image_id": "",
+  "callsite_patch_verified": false,
+  "native_trace_adapter_verified": false,
+  "effective_flags_verified": false,
+  "metadata_drain_verified": false,
+  "tracer": "rocprofv3",
+  "tp": 1,
+  "scope_spec_status": "exploratory",
+  "environment": {
+    "DEBUG_CLR_MAX_BATCH_SIZE": "1000000",
+    "FRONTIER_B_MARKERS": "1",
+    "FRONTIER_B_TRACER": "roctx",
+    "HSA_ENABLE_COREDUMP": "0",
+    "SGLANG_USE_AITER": "1",
+    "HIP_VISIBLE_DEVICES": "0",
+    "CUDA_VISIBLE_DEVICES": "0"
+  },
+  "source_hashes": {},
+  "model_path": "/mnt/data/data/hai/hai2/models/Qwen3-30B-A3B",
+  "requests": "requests.example.json",
+  "server_argv": [],
+  "telemetry_argv": [],
+  "ready_timeout_s": 300,
+  "run_timeout_s": 1200,
+  "base_url": "http://127.0.0.1:30000",
+  "before_measurement": [],
+  "after_measurement": [],
+  "pending": "Populate only from approved-image inspection; server/tracer/drain commands are deliberately absent."
+}

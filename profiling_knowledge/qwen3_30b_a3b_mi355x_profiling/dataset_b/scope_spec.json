@@ -1,0 +1,153 @@
+{
+  "version": "qwen3-provisional-0.1",
+  "status": "provisional",
+  "description": "Exploratory physical recipe, NOT verified pinned-image call sites or approved final modeling policy. Mixed and TP variants are placeholders that must be resolved against source. One compound observation is never split into A durations.",
+  "exclusions": [
+    "moe",
+    "communication",
+    "output_head",
+    "sampling",
+    "final_norm",
+    "scheduler_support",
+    "warmup",
+    "graph_capture"
+  ],
+  "rules": [
+    {
+      "physical_scope": "embedding",
+      "variant": "tp_native",
+      "layers": "model",
+      "phases": [
+        "prefill",
+        "decode",
+        "mixed"
+      ],
+      "a_scopes": [
+        "emb"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "input_norm",
+      "variant": "norm_only",
+      "layers": "first",
+      "phases": [
+        "prefill",
+        "decode",
+        "mixed"
+      ],
+      "a_scopes": [
+        "input_layernorm"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "input_norm",
+      "variant": "add_norm",
+      "layers": "later",
+      "phases": [
+        "prefill",
+        "decode",
+        "mixed"
+      ],
+      "a_scopes": [
+        "input_layernorm"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "qkv_qk_norm",
+      "variant": "compound",
+      "layers": "all",
+      "phases": [
+        "prefill",
+        "decode",
+        "mixed"
+      ],
+      "a_scopes": [
+        "attn_pre_proj"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "rope_kv",
+      "variant": "fused",
+      "layers": "all",
+      "phases": [
+        "prefill",
+        "decode",
+        "mixed"
+      ],
+      "a_scopes": [
+        "attn_rope",
+        "attn_kv_cache_save"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "attention_prefill",
+      "variant": "native",
+      "layers": "all",
+      "phases": [
+        "prefill"
+      ],
+      "a_scopes": [
+        "attn_prefill"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "attention_decode",
+      "variant": "native",
+      "layers": "all",
+      "phases": [
+        "decode"
+      ],
+      "a_scopes": [
+        "attn_decode"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "attention_mixed",
+      "variant": "native",
+      "layers": "all",
+      "phases": [
+        "mixed"
+      ],
+      "a_scopes": [
+        "attn_prefill",
+        "attn_decode"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "output_projection",
+      "variant": "gemm_only",
+      "layers": "all",
+      "phases": [
+        "prefill",
+        "decode",
+        "mixed"
+      ],
+      "a_scopes": [
+        "attn_post_proj"
+      ],
+      "compatibility": "provisional"
+    },
+    {
+      "physical_scope": "post_norm",
+      "variant": "add_norm",
+      "layers": "all",
+      "phases": [
+        "prefill",
+        "decode",
+        "mixed"
+      ],
+      "a_scopes": [
+        "post_attention_layernorm"
+      ],
+      "compatibility": "provisional"
+    }
+  ]
+}

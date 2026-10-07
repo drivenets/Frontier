@@ -1,0 +1,10 @@
+{
+  "schema_version": "b-requests-0.1",
+  "concurrency": 1,
+  "timeout_s": 480,
+  "vocab_size": 151936,
+  "requests": [
+    {"request_id": "warmup-0", "input_ids": [9707, 11, 1246, 525, 498, 30], "max_new_tokens": 2, "cohort": 0, "phase": "warmup", "offset_s": 0},
+    {"request_id": "r-0", "input_ids": [9707, 11, 1246, 525, 498, 30, 358, 2776], "max_new_tokens": 4, "cohort": 1, "phase": "measurement", "offset_s": 0}
+  ]
+}

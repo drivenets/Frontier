@@ -1,0 +1,99 @@
+[
+  {
+    "check": "Python compilation",
+    "files": 14,
+    "passed": true
+  },
+  {
+    "argv": [
+      "bash",
+      "-n",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/run_b.sbatch"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "passed": true,
+    "stderr": "",
+    "stdout": ""
+  },
+  {
+    "argv": [
+      "/home/dn/.virtualenvs/qwen3-profiling/bin/python",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/drive_b.py",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/requests.example.json",
+      "--validate-only",
+      "--output",
+      "/tmp/b-unused"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "passed": true,
+    "stderr": "",
+    "stdout": "valid: 2 requests; concurrency=1 (not batch size)\n"
+  },
+  {
+    "argv": [
+      "/home/dn/.virtualenvs/qwen3-profiling/bin/python",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/run_b.py",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/launch_plan.example.json",
+      "--preflight-only"
+    ],
+    "exit_code": 1,
+    "expected_exit": 1,
+    "passed": true,
+    "stderr": "Traceback (most recent call last):\n  File \"/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/run_b.py\", line 140, in <module>\n    main()\n  File \"/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/run_b.py\", line 129, in main\n    preflight(plan)\n  File \"/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/run_b.py\", line 24, in preflight\n    require(re.fullmatch(r\"sha256:[0-9a-f]{64}\", plan.get(\"image_id\", \"\")), \"approved image digest/ID unresolved\")\n  File \"/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/b_common.py\", line 16, in require\n    raise Invalid(message)\nb_common.Invalid: approved image digest/ID unresolved\n",
+    "stdout": ""
+  },
+  {
+    "argv": [
+      "/home/dn/.virtualenvs/qwen3-profiling/bin/python",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/check_b.py",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/synthetic_validation/bundle.json",
+      "--require-dataset-accepted"
+    ],
+    "exit_code": 1,
+    "expected_exit": 1,
+    "passed": true,
+    "stderr": "",
+    "stdout": "{\n  \"schema_version\": \"b0.1\",\n  \"run_id\": \"SYNTHETIC-ONLY\",\n  \"structural_pass\": true,\n  \"dataset_accepted\": false,\n  \"data_kind\": \"synthetic_fixture\",\n  \"raw_kernels\": 216,\n  \"target_kernels\": 208,\n  \"excluded_kernels\": 8,\n  \"scopes\": 104,\n  \"observed_forwards\": 2,\n  \"rank_forwards\": 8,\n  \"ranks\": 4,\n  \"requests\": 2,\n  \"clock_states\": {\n    \"valid_context\": 208\n  },\n  \"missing_live_evidence\": [\n    \"image_digest\",\n    \"source_hashes\",\n    \"patch_sha256\",\n    \"effective_config\",\n    \"model_revision\",\n    \"tokenizer_revision\",\n    \"numerical_equivalence_ref\",\n    \"perturbation_ref\",\n    \"tracer_crosscheck_ref\",\n    \"rank_device_evidence_ref\"\n  ],\n  \"limitations\": [\n    \"Clock values are sampled context, not instantaneous per-kernel clock measurements.\",\n    \"Physical/A mapping is provisional; no complete B coverage claim.\",\n    \"b0.1 checks eager structure only; full Dataset B acceptance requires replay and cross-run pilot validation.\"\n  ]\n}\n"
+  },
+  {
+    "argv": [
+      "patch",
+      "--dry-run",
+      "-p1",
+      "-d",
+      "/tmp/b-patch-check-5szk_ff0",
+      "-i",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/sglang_b_markers.patch"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "passed": true,
+    "stderr": "",
+    "stdout": "checking file python/sglang/srt/frontier_b_markers.py\n"
+  },
+  {
+    "argv": [
+      "patch",
+      "-p1",
+      "-d",
+      "/tmp/b-patch-check-5szk_ff0",
+      "-i",
+      "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/sglang_b_markers.patch"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "passed": true,
+    "stderr": "",
+    "stdout": "patching file python/sglang/srt/frontier_b_markers.py\n"
+  },
+  {
+    "check": "helper patch exactly matches local runtime",
+    "passed": true
+  },
+  {
+    "check": "operator boundary REPORT.md present",
+    "present": true
+  }
+]

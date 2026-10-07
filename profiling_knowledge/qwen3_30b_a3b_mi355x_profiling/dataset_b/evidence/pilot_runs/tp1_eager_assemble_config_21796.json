@@ -1,0 +1,75 @@
+{
+  "run_dir": "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/pilot_runs/b-pilot-21796/collection",
+  "driver_output_dirs": [
+    "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/pilot_runs/b-pilot-21796/collection/warmup",
+    "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/pilot_runs/b-pilot-21796/collection/measurement"
+  ],
+  "telemetry_path": "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/pilot_runs/b-pilot-21796/collection/telemetry_samples.jsonl",
+  "evidence_ref": "dataset_b/evidence/pilot_runs/b-pilot-21796 (TP1 eager pilot, clean run: skip-server-warmup + health-endpoint-generation disabled, no administrative forwards, 2026-10-05)",
+  "capture_id": "21796:collection",
+  "ranks": [
+    {
+      "rank": 0,
+      "native_pid": 248,
+      "gpu_id": "pci:0000:05:00.0",
+      "b_metadata_json": "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/pilot_runs/b-pilot-21796/collection/b_metadata/metadata-pid248.json",
+      "rocprof_trace_dir": "/home/dn/Frontier-qwen3-profiling/profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/pilot_runs/b-pilot-21796/collection/rocprof_trace",
+      "complete": true,
+      "drained": true,
+      "metadata_complete": true,
+      "dropped_records": null
+    }
+  ],
+  "static": {
+    "schema_version": "b0.1",
+    "data_kind": "live",
+    "tp": 1,
+    "scope_spec_version": "qwen3-provisional-0.1",
+    "model": {
+      "n_q_head": 32,
+      "n_kv_head": 4,
+      "n_embd": 2048,
+      "n_expanded_embd": 768,
+      "vocab_size": 151936,
+      "head_dim": 128,
+      "num_layers": 48,
+      "block_size": 1
+    },
+    "run_id": "tp1_eager_pilot_21796",
+    "image_digest": "sha256:dece67677b2b6cfae2aa12a546fab317a1499745d4ec866c45b9bd4ea0fc0bde",
+    "source_hashes": {
+      "python/sglang/srt/entrypoints/http_server.py": "0c22ad3e61af5265bfca9364590706529aa945d9b78826d428988f1076908066",
+      "python/sglang/srt/frontier_b_markers.py": "cb1be2ae7d2f075bef9b78cd56199822260bdeefa78f486953c69051c67181af",
+      "python/sglang/srt/layers/communicator.py": "779d24c1c17e1d2e5ea8661bc7b3d8a26308fa6185c57c426c778713f9425b6d",
+      "python/sglang/srt/managers/io_struct.py": "8956e366c1aff95e748c9d3f6df875873b522a91bd585cee0ff2591609c03382",
+      "python/sglang/srt/managers/schedule_batch.py": "dbb1a3177de91733c3f19fe6afcfa0fc9bcaf66d6cc5c10fef26bf7fa5b205ee",
+      "python/sglang/srt/managers/scheduler.py": "a4140487aac0fa6970ca01918b97bce241465cfad262070523a9b43cd65d3987",
+      "python/sglang/srt/managers/tokenizer_manager.py": "b3223086faeb4e1109c52ab4c0b30d81340486adeb94d717dab0d6ff1fb844a0",
+      "python/sglang/srt/models/qwen2_moe.py": "36acb7c8f38ddbffa8827829fc5152b1a41a832e34d84be70fbba949d2807505",
+      "python/sglang/srt/models/qwen3_moe.py": "c51a1b696fa880f662f60ac0ac5623cc22ec2c4d911ff0437e9486cf5f2296c9"
+    },
+    "patch_sha256": "7241ec5523ca32266cb9f52d5b9707e63d8e6376e656fa4d255505953059f4e8",
+    "model_revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+    "tokenizer_revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+    "effective_config": {
+      "attention_backend": "aiter",
+      "page_size": 1,
+      "disable_radix_cache": true,
+      "chunked_prefill_size": 16384,
+      "max_prefill_tokens": 16384,
+      "context_length": 16640,
+      "max_running_requests": 64,
+      "dtype": "bfloat16",
+      "tp_size": 1,
+      "disable_cuda_graph": true,
+      "disable_overlap_schedule": false,
+      "enable_mixed_chunk": false,
+      "mem_fraction_static": 0.7769,
+      "random_seed": 0,
+      "sglang_use_aiter_env": "1",
+      "skip_server_warmup": true,
+      "sglang_enable_health_endpoint_generation": false,
+      "source": "verbatim ServerArgs(...) line, server.log, job 21796; skip_server_warmup and SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION=false added after job 21791's reconciliation found 11/19 forwards were SGLang-internal administrative probes with no independent ground truth"
+    }
+  }
+}

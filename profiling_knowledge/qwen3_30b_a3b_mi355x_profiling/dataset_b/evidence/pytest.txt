@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/dn
+configfile: pyproject.toml
+collected 136 items
+
+profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/tests/test_collector.py . [  0%]
+........................................................................ [ 53%]
+...........................................................s...          [100%]
+
+======================== 135 passed, 1 skipped in 0.50s ========================

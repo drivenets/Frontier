@@ -1,0 +1,6 @@
+{
+  "bundle": "profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/evidence/synthetic_validation/bundle.json",
+  "bundle_sha256": "db13771aae7062583ae3cb54d0c589238a494ca6a56408faf0f6574782ce1074",
+  "scope_spec": "profiling_knowledge/qwen3_30b_a3b_mi355x_profiling/dataset_b/scope_spec.json",
+  "scope_spec_sha256": "f11331c5b155b57b2a516623acc9c9ef3a19271fbbd86755c734f53f919a8080"
+}

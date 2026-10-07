@@ -1,0 +1,43 @@
+{
+  "schema_version": "b-requests-0.1",
+  "concurrency": 1,
+  "timeout_s": 120,
+  "vocab_size": 151936,
+  "workload": "exact synthetic token IDs; no claim of natural-language routing",
+  "requests": [
+    {
+      "request_id": "b-warmup-0",
+      "input_ids": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "max_new_tokens": 2,
+      "cohort": 0,
+      "phase": "warmup",
+      "offset_s": 0
+    },
+    {
+      "request_id": "b-short-0",
+      "input_ids": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "max_new_tokens": 2,
+      "cohort": 1,
+      "phase": "measurement",
+      "offset_s": 0
+    }
+  ]
+}

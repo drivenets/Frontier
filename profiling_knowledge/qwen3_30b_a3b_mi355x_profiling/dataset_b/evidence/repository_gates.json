@@ -1,0 +1,19 @@
+{
+  "broad_50_simulator_scenarios": "unmet; not run",
+  "command": "/home/dn/.virtualenvs/qwen3-profiling/bin/python -m pytest tests/unit/test_pdd_public_surface_docs.py tests/unit/test_examples_pdd_scripts.py -q",
+  "exit_code": 1,
+  "failed": 3,
+  "failures": [
+    "test_top_level_docs_advertise_supported_pdd_without_upcoming_claims",
+    "test_public_docs_require_sequential_pdd_release_mode",
+    "test_public_docs_state_internal_parallel_pdd_boundary_and_current_evidence"
+  ],
+  "missing_documented_scripts": [
+    "tests/debug/e2e-level/monolith_mode/scripts/test_dense_tp2_pp2_dummy.sh",
+    "tests/debug/e2e-level/monolith_mode/scripts/test_moe_tp2_ep2_pp2_dummy.sh"
+  ],
+  "note": "All three fail on untouched README.md assertions. No tracked simulator/repository files changed.",
+  "passed": 10,
+  "replacement_dense_smoke": "examples/architecture/co-location/offline/dense_model_basic.sh",
+  "replacement_result": "fails before simulation: ModuleNotFoundError: plotly"
+}

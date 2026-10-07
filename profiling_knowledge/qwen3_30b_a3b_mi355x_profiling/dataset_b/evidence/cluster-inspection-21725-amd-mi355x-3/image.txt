@@ -1,0 +1,1 @@
+"sha256:dece67677b2b6cfae2aa12a546fab317a1499745d4ec866c45b9bd4ea0fc0bde" ["10.1.1.0:5050/dnis/sglang-rocm@sha256:d8e0eb9c3211b593fbd574ada06e03d48d956c159bb9b6c123f4d86c12d8e6dc"]

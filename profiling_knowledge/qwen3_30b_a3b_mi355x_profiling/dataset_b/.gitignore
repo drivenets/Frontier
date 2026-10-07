@@ -1,0 +1,16 @@
+__pycache__/
+.pytest_cache/
+
+# Raw/derived pilot-run data: regenerable from the cluster run + assemble_bundle.py
+# + normalize_b.py, and too large for git (normalized.json alone can be 100s of MB).
+# Small provenance (assemble configs, calibration_holdout, *-extracted/ check
+# reports, canary reports, markdown notes) stays tracked.
+evidence/pilot_runs/b-pilot-[0-9][0-9][0-9][0-9][0-9]
+evidence/pilot_runs/b-pilot-[0-9][0-9][0-9][0-9][0-9]-partial
+evidence/pilot_runs/*-bundle.json
+evidence/pilot_runs/*-normalized.json
+
+# Raw GPU trace data: every CSV under this tree is rocprofv3's native trace
+# output (kernel/hip_api/agent_info/marker rows), never source or config.
+# We do not push measurement data to the repo, regardless of size.
+*.csv

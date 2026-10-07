@@ -1,0 +1,17 @@
+{
+  "files": [
+    {
+      "header": "\"Kind\",\"Agent_Id\",\"Queue_Id\",\"Stream_Id\",\"Thread_Id\",\"Dispatch_Id\",\"Kernel_Id\",\"Kernel_Name\",\"Correlation_Id\",\"Start_Timestamp\",\"End_Timestamp\",\"LDS_Block_Size\",\"Scratch_Size\",\"VGPR_Count\",\"Accum_VGPR_Count\",\"SGPR_Count\",\"Workgroup_Size_X\",\"Workgroup_Size_Y\",\"Workgroup_Size_Z\",\"Grid_Size_X\",\"Grid_Size_Y\",\"Grid_Size_Z\"",
+      "path": "/home/dn/amd-v3/tests/integration_poc_rocprof/integration_kernel_trace.csv",
+      "sha256": "dc6917bf15fdadb8b8316cb68239aab7fd336867470f6fe624527d85f3d3118f"
+    },
+    {
+      "header": "\"Domain\",\"Function\",\"Process_Id\",\"Thread_Id\",\"Correlation_Id\",\"Start_Timestamp\",\"End_Timestamp\"",
+      "path": "/home/dn/amd-v3/tests/integration_poc_rocprof/integration_hip_api_trace.csv",
+      "sha256": "4e35192863121913bb6dc586f762ca4a35a2665f787b14ea78e5e44f824c2976"
+    }
+  ],
+  "kind": "Unrelated existing traces; NOT B or pinned-image evidence",
+  "notes": "Native CSV contains an invalid timestamp with embedded HIP API text. Parser correctly rejects it. No rows used as B measurements.",
+  "outcome": "Invalid: unmapped native GPU agent"
+}

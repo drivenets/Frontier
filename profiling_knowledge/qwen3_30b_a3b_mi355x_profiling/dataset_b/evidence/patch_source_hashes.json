@@ -1,0 +1,36 @@
+{
+  "container_paths": {
+    "python/sglang/srt/entrypoints/http_server.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/entrypoints/http_server.py",
+    "python/sglang/srt/frontier_b_markers.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/frontier_b_markers.py",
+    "python/sglang/srt/layers/communicator.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/layers/communicator.py",
+    "python/sglang/srt/managers/io_struct.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/managers/io_struct.py",
+    "python/sglang/srt/managers/schedule_batch.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/managers/schedule_batch.py",
+    "python/sglang/srt/managers/scheduler.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/managers/scheduler.py",
+    "python/sglang/srt/managers/tokenizer_manager.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/managers/tokenizer_manager.py",
+    "python/sglang/srt/models/qwen2_moe.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/models/qwen2_moe.py",
+    "python/sglang/srt/models/qwen3_moe.py": "/usr/local/lib/python3.12/dist-packages/sglang/srt/models/qwen3_moe.py"
+  },
+  "marker_runtime_py_sha256": "51f8b3cbd5d8240281e137ee9b2d9ca1b11efa19f75bea8170e5bbcb668a339d",
+  "original_sha256": {
+    "python/sglang/srt/entrypoints/http_server.py": "305a02a9238b62da90c9dc90ecbbdc0811ba7725f13056677e3ed7dbbfc81d4e",
+    "python/sglang/srt/layers/communicator.py": "7305647bba46a6cfac7b1eef10a0c4f4ca89e802cd4a1d045774e8e47db0481f",
+    "python/sglang/srt/managers/io_struct.py": "cc022f58fe2468fb6231c1e65a41106cbc0d73fe1bd784d6f57df94a412564a9",
+    "python/sglang/srt/managers/schedule_batch.py": "2d62ac813c07fedd219dfcd89333856390157a3385464c779de5892e8d170a4d",
+    "python/sglang/srt/managers/scheduler.py": "d45173c87b10f9c3b5c48a98ce932b8bb4fbb6fe1d6820efa9f3accfa13d0228",
+    "python/sglang/srt/managers/tokenizer_manager.py": "5160c6d4615bd68daec90d732755859b69a4afe19b0b12541190cb5ebae4272b",
+    "python/sglang/srt/models/qwen2_moe.py": "20467a642243f2160f34381c31468b85c60c33316e4a33b38c07be3ac53424df",
+    "python/sglang/srt/models/qwen3_moe.py": "7c559324111dfdc6927e97d13e31d5ff7b23bf7efa4d4fa33d636c026212bb05"
+  },
+  "patch_sha256": "009d280e8ada3024a8163865946bf96a020285d6d748210d42c14d99f4ccb2e2",
+  "patched_sha256": {
+    "python/sglang/srt/entrypoints/http_server.py": "0c22ad3e61af5265bfca9364590706529aa945d9b78826d428988f1076908066",
+    "python/sglang/srt/frontier_b_markers.py": "51f8b3cbd5d8240281e137ee9b2d9ca1b11efa19f75bea8170e5bbcb668a339d",
+    "python/sglang/srt/layers/communicator.py": "779d24c1c17e1d2e5ea8661bc7b3d8a26308fa6185c57c426c778713f9425b6d",
+    "python/sglang/srt/managers/io_struct.py": "8956e366c1aff95e748c9d3f6df875873b522a91bd585cee0ff2591609c03382",
+    "python/sglang/srt/managers/schedule_batch.py": "dbb1a3177de91733c3f19fe6afcfa0fc9bcaf66d6cc5c10fef26bf7fa5b205ee",
+    "python/sglang/srt/managers/scheduler.py": "a4140487aac0fa6970ca01918b97bce241465cfad262070523a9b43cd65d3987",
+    "python/sglang/srt/managers/tokenizer_manager.py": "b3223086faeb4e1109c52ab4c0b30d81340486adeb94d717dab0d6ff1fb844a0",
+    "python/sglang/srt/models/qwen2_moe.py": "36acb7c8f38ddbffa8827829fc5152b1a41a832e34d84be70fbba949d2807505",
+    "python/sglang/srt/models/qwen3_moe.py": "c51a1b696fa880f662f60ac0ac5623cc22ec2c4d911ff0437e9486cf5f2296c9"
+  }
+}
