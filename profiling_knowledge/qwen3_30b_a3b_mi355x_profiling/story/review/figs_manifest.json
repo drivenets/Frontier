@@ -1,0 +1,1187 @@
+{
+ "generated": "story/review/make_corrected_figures.py",
+ "naming": "human-readable step names in titles and legends; job ids in the provenance footnote and captions",
+ "shared_store": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op",
+ "steps": {
+  "start": {
+   "name": "Where we started",
+   "job": "inherited",
+   "shared_dir": "legacy_pre-2026-09_torch-sdpa"
+  },
+  "first": {
+   "name": "First re-collection",
+   "job": "21313",
+   "shared_dir": "2026-09-15_1308_linear_op_dense3327"
+  },
+  "rerun": {
+   "name": "The spike, reproduced",
+   "job": "21334",
+   "shared_dir": "2026-09-16_0629_dense3327_rerun"
+  },
+  "diag": {
+   "name": "Holding the GPU behind the host",
+   "job": "21356",
+   "shared_dir": "2026-09-16_0832_dip_x1_backlog_knob_diagnostic"
+  },
+  "gc": {
+   "name": "Garbage collection removed",
+   "job": "21361",
+   "shared_dir": "2026-09-16_0853_gcfix_verification"
+  },
+  "gpu": {
+   "name": "Timing the GPU, not the host",
+   "job": "21483",
+   "shared_dir": "2026-09-22_0647_dense_two_column_rope_fix"
+  },
+  "barrier": {
+   "name": "Queue barrier removed",
+   "job": "21500",
+   "shared_dir": "2026-09-22_1525_dense_fixed_batchflush"
+  },
+  "backlog": {
+   "name": "A real workload as backlog",
+   "job": "21519",
+   "shared_dir": "2026-09-22_1735_dense_workbacklog_settle3"
+  },
+  "final": {
+   "name": "The dataset we handed over",
+   "job": "21539",
+   "shared_dir": "2026-09-23_0949_dense_workbacklog_settle8"
+  }
+ },
+ "evolution_sequence": [
+  "Where we started",
+  "First re-collection",
+  "Garbage collection removed",
+  "Timing the GPU, not the host",
+  "Queue barrier removed",
+  "A real workload as backlog",
+  "The dataset we handed over"
+ ],
+ "excluded_from_evolution": {
+  "21356": "diagnostic, different grid and timer",
+  "21334": "same protocol as the first re-collection"
+ },
+ "figures": [
+  {
+   "file": "a0_where_we_started__attn_pre_proj.png",
+   "title": "Where we started - attn_pre_proj",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    }
+   ],
+   "caveats": [
+    "Qwen3-30B-A3B, verified from the file's own architecture columns.",
+    "Host-bound at TP>1; attn_rope here timed a torch fallback that is not RoPE."
+   ]
+  },
+  {
+   "file": "a0_where_we_started__attn_post_proj.png",
+   "title": "Where we started - attn_post_proj",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    }
+   ],
+   "caveats": [
+    "Qwen3-30B-A3B, verified from the file's own architecture columns.",
+    "Host-bound at TP>1; attn_rope here timed a torch fallback that is not RoPE."
+   ]
+  },
+  {
+   "file": "a0_where_we_started__attn_rope.png",
+   "title": "Where we started - attn_rope",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    }
+   ],
+   "caveats": [
+    "Qwen3-30B-A3B, verified from the file's own architecture columns.",
+    "Host-bound at TP>1; attn_rope here timed a torch fallback that is not RoPE."
+   ]
+  },
+  {
+   "file": "a1_the_spike__attn_pre_proj.png",
+   "title": "The spike - attn_pre_proj",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    }
+   ],
+   "caveats": [
+    "Log y: the outlier is ~1,100x the row median, so a linear axis would hide everything else.",
+    "Medians are untouched by the spike; only mean and max are destroyed.",
+    "It sits at 0-based timed run 11 (the 12th of 50, the 15th forward)."
+   ]
+  },
+  {
+   "file": "a1_the_spike__attn_post_proj.png",
+   "title": "The spike - attn_post_proj",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    }
+   ],
+   "caveats": [
+    "Log y: the outlier is ~1,100x the row median, so a linear axis would hide everything else.",
+    "Medians are untouched by the spike; only mean and max are destroyed.",
+    "It sits at 0-based timed run 11 (the 12th of 50, the 15th forward)."
+   ]
+  },
+  {
+   "file": "a1_the_spike__attn_rope.png",
+   "title": "The spike - attn_rope",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    }
+   ],
+   "caveats": [
+    "Log y: the outlier is ~1,100x the row median, so a linear axis would hide everything else.",
+    "Medians are untouched by the spike; only mean and max are destroyed.",
+    "It sits at 0-based timed run 11 (the 12th of 50, the 15th forward)."
+   ]
+  },
+  {
+   "file": "a2_cost_that_fell__attn_pre_proj.png",
+   "title": "The cost that fell as the work grew - attn_pre_proj",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    }
+   ],
+   "caveats": [
+    "A median that falls as the token count rises cannot be the hardware; this is what prompted the investigation.",
+    "Monotonicity was never an acceptance criterion - the final dataset still has downward steps."
+   ]
+  },
+  {
+   "file": "a2_cost_that_fell__attn_post_proj.png",
+   "title": "The cost that fell as the work grew - attn_post_proj",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    }
+   ],
+   "caveats": [
+    "A median that falls as the token count rises cannot be the hardware; this is what prompted the investigation.",
+    "Monotonicity was never an acceptance criterion - the final dataset still has downward steps."
+   ]
+  },
+  {
+   "file": "a2_cost_that_fell__attn_rope.png",
+   "title": "The cost that fell as the work grew - attn_rope",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    }
+   ],
+   "caveats": [
+    "A median that falls as the token count rises cannot be the hardware; this is what prompted the investigation.",
+    "Monotonicity was never an acceptance criterion - the final dataset still has downward steps."
+   ]
+  },
+  {
+   "file": "a3_holding_gpu_behind_host__attn_pre_proj.png",
+   "title": "Holding the GPU behind the host - attn_pre_proj",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Holding the GPU behind the host",
+     "job": "21356",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0832_dip_x1_backlog_knob_diagnostic"
+    }
+   ],
+   "caveats": [
+    "This is a diagnostic, not an iteration: 4,800 rows, tokens >=1,024 only, the old single-column timer plus one opt-in backlog knob.",
+    "One change that touches no kernel removes the dip at every op and TP - that is the evidence the event pairs had been timing the host.",
+    "The two passes differ in clock state as well as queue state (~2.0 GHz idle-start vs ~2.4 GHz after the spin)."
+   ]
+  },
+  {
+   "file": "a3_holding_gpu_behind_host__attn_post_proj.png",
+   "title": "Holding the GPU behind the host - attn_post_proj",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Holding the GPU behind the host",
+     "job": "21356",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0832_dip_x1_backlog_knob_diagnostic"
+    }
+   ],
+   "caveats": [
+    "This is a diagnostic, not an iteration: 4,800 rows, tokens >=1,024 only, the old single-column timer plus one opt-in backlog knob.",
+    "One change that touches no kernel removes the dip at every op and TP - that is the evidence the event pairs had been timing the host.",
+    "The two passes differ in clock state as well as queue state (~2.0 GHz idle-start vs ~2.4 GHz after the spin)."
+   ]
+  },
+  {
+   "file": "a3_holding_gpu_behind_host__attn_rope.png",
+   "title": "Holding the GPU behind the host - attn_rope",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Holding the GPU behind the host",
+     "job": "21356",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0832_dip_x1_backlog_knob_diagnostic"
+    }
+   ],
+   "caveats": [
+    "This is a diagnostic, not an iteration: 4,800 rows, tokens >=1,024 only, the old single-column timer plus one opt-in backlog knob.",
+    "One change that touches no kernel removes the dip at every op and TP - that is the evidence the event pairs had been timing the host.",
+    "The two passes differ in clock state as well as queue state (~2.0 GHz idle-start vs ~2.4 GHz after the spin)."
+   ]
+  },
+  {
+   "file": "a4_rope_kernel_that_was_not_rope__attn_rope.png",
+   "title": "The RoPE kernel that was not RoPE - attn_rope",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Holding the GPU behind the host",
+     "job": "21356",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0832_dip_x1_backlog_knob_diagnostic"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    }
+   ],
+   "caveats": [
+    "Different computation, not a timing fix: the fallback was 13 launch-bound kernels rotating only the first 64 columns of head 0.",
+    "The two jobs also differ in repetitions, timer and grid, so this ratio mixes the kernel change with the timing change.",
+    "attn_pre_proj and attn_post_proj agree within 1.2 % across the same pair, which is what makes them controls."
+   ]
+  },
+  {
+   "file": "a5_patterns_inside_repetitions__attn_pre_proj.png",
+   "title": "Patterns inside the repetitions - attn_pre_proj",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "x is 1-based here. The investigation documents count the same positions from 0, which is why the spike is called 'run 11' there.",
+    "Two separate defects: a within-block drift (the backlog spin let the clock domains idle) and a fixed-position bump (a queue barrier).",
+    "Fixing them changed the medians by at most 0.2 % - the backlog change did that, not these."
+   ]
+  },
+  {
+   "file": "a5_patterns_inside_repetitions__attn_post_proj.png",
+   "title": "Patterns inside the repetitions - attn_post_proj",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "x is 1-based here. The investigation documents count the same positions from 0, which is why the spike is called 'run 11' there.",
+    "Two separate defects: a within-block drift (the backlog spin let the clock domains idle) and a fixed-position bump (a queue barrier).",
+    "Fixing them changed the medians by at most 0.2 % - the backlog change did that, not these."
+   ]
+  },
+  {
+   "file": "a5_patterns_inside_repetitions__attn_rope.png",
+   "title": "Patterns inside the repetitions - attn_rope",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "x is 1-based here. The investigation documents count the same positions from 0, which is why the spike is called 'run 11' there.",
+    "Two separate defects: a within-block drift (the backlog spin let the clock domains idle) and a fixed-position bump (a queue barrier).",
+    "Fixing them changed the medians by at most 0.2 % - the backlog change did that, not these."
+   ]
+  },
+  {
+   "file": "a6_dataset_we_handed_over__attn_pre_proj.png",
+   "title": "The dataset we handed over - attn_pre_proj",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The visible steps are real hardware behaviour (tile selection), not measurement artefacts.",
+    "43-48 % of consecutive-token steps still decrease, median -1.1 %, worst -42 % (attn_post_proj TP8).",
+    "Scopes below ~10 us sit inside the instrument's few-microsecond floor."
+   ]
+  },
+  {
+   "file": "a6_dataset_we_handed_over__attn_post_proj.png",
+   "title": "The dataset we handed over - attn_post_proj",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The visible steps are real hardware behaviour (tile selection), not measurement artefacts.",
+    "43-48 % of consecutive-token steps still decrease, median -1.1 %, worst -42 % (attn_post_proj TP8).",
+    "Scopes below ~10 us sit inside the instrument's few-microsecond floor."
+   ]
+  },
+  {
+   "file": "a6_dataset_we_handed_over__attn_rope.png",
+   "title": "The dataset we handed over - attn_rope",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The visible steps are real hardware behaviour (tile selection), not measurement artefacts.",
+    "43-48 % of consecutive-token steps still decrease, median -1.1 %, worst -42 % (attn_post_proj TP8).",
+    "Scopes below ~10 us sit inside the instrument's few-microsecond floor."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_pre_proj_tp1.png",
+   "title": "How the data changed - attn_pre_proj, TP 1",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    1
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_pre_proj_tp2.png",
+   "title": "How the data changed - attn_pre_proj, TP 2",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    2
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_pre_proj_tp4.png",
+   "title": "How the data changed - attn_pre_proj, TP 4",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    4
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_pre_proj_tp8.png",
+   "title": "How the data changed - attn_pre_proj, TP 8",
+   "ops": [
+    "attn_pre_proj"
+   ],
+   "tps": [
+    8
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_post_proj_tp1.png",
+   "title": "How the data changed - attn_post_proj, TP 1",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    1
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_post_proj_tp2.png",
+   "title": "How the data changed - attn_post_proj, TP 2",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    2
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_post_proj_tp4.png",
+   "title": "How the data changed - attn_post_proj, TP 4",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    4
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_post_proj_tp8.png",
+   "title": "How the data changed - attn_post_proj, TP 8",
+   "ops": [
+    "attn_post_proj"
+   ],
+   "tps": [
+    8
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_rope_tp1.png",
+   "title": "How the data changed - attn_rope, TP 1",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    1
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly.",
+    "attn_rope: the first three curves timed a torch fallback that is not RoPE; the last four use the fused kernel."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_rope_tp2.png",
+   "title": "How the data changed - attn_rope, TP 2",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    2
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly.",
+    "attn_rope: the first three curves timed a torch fallback that is not RoPE; the last four use the fused kernel."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_rope_tp4.png",
+   "title": "How the data changed - attn_rope, TP 4",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    4
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly.",
+    "attn_rope: the first three curves timed a torch fallback that is not RoPE; the last four use the fused kernel."
+   ]
+  },
+  {
+   "file": "b_evolution__attn_rope_tp8.png",
+   "title": "How the data changed - attn_rope, TP 8",
+   "ops": [
+    "attn_rope"
+   ],
+   "tps": [
+    8
+   ],
+   "steps": [
+    {
+     "name": "Where we started",
+     "job": "inherited",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/legacy_pre-2026-09_torch-sdpa"
+    },
+    {
+     "name": "First re-collection",
+     "job": "21313",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-15_1308_linear_op_dense3327"
+    },
+    {
+     "name": "Garbage collection removed",
+     "job": "21361",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-16_0853_gcfix_verification"
+    },
+    {
+     "name": "Timing the GPU, not the host",
+     "job": "21483",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_0647_dense_two_column_rope_fix"
+    },
+    {
+     "name": "Queue barrier removed",
+     "job": "21500",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1525_dense_fixed_batchflush"
+    },
+    {
+     "name": "A real workload as backlog",
+     "job": "21519",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-22_1735_dense_workbacklog_settle3"
+    },
+    {
+     "name": "The dataset we handed over",
+     "job": "21539",
+     "shared_dir": "/opt/shared/frontier-qwen3-profiling/datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8"
+    }
+   ],
+   "caveats": [
+    "The first three curves measure the host's launch span, the last four measure device time. Below the crossover they differ because of what is being measured, not because the hardware changed.",
+    "The diagnostic (job 21356) is not shown: different grid and timer. The spike re-run is not shown: same protocol as the first re-collection, it would overlap exactly.",
+    "attn_rope: the first three curves timed a torch fallback that is not RoPE; the last four use the fused kernel."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,265 @@
+{
+ "generated": "make_presentation_figures_v2.py",
+ "note": "v2 after the 2026-10-11 verification; see ../review/FINDINGS_LOG.md",
+ "iteration_sequence": [
+  "21313",
+  "21334",
+  "21361",
+  "21483",
+  "21500",
+  "21519",
+  "21539"
+ ],
+ "diagnostic_not_an_iteration": "21356",
+ "sources": {
+  "21313": {
+   "label": "original dense grid",
+   "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+   "md5": "97d6255414b26760c0295666c39212b2",
+   "in_git": true
+  },
+  "21334": {
+   "label": "rerun, different node",
+   "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/runs/2026-09-16_0629_linear_op_dense3327_rerun/linear_op.csv",
+   "md5": "39862552530119756fcf6494e1dad9be",
+   "in_git": true
+  },
+  "21356": {
+   "label": "X1 backlog-knob diagnostic",
+   "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dip_x1/linear_op.csv",
+   "md5": "93704fef545586d2847c0f6fd68bcc30",
+   "in_git": false
+  },
+  "21361": {
+   "label": "GC fix",
+   "path": "/home/dn/Frontier-qwen3-profiling/data/profiling_gcfix/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+   "md5": "9381d3edaa8acc3dcd96b97e1dcced2b",
+   "in_git": true
+  },
+  "21483": {
+   "label": "two-column + fused RoPE",
+   "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed/linear_op.csv",
+   "md5": "1d84b3d1957b2c977afbbbd43c694f2c",
+   "in_git": false
+  },
+  "21500": {
+   "label": "batch-flush fix",
+   "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed_batchflush/linear_op.csv",
+   "md5": "cd405d64289b0b42e8916ba24574ba01",
+   "in_git": false
+  },
+  "21519": {
+   "label": "gemm_alloc backlog, settle 3",
+   "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed_workbacklog/linear_op.csv",
+   "md5": "7016bd6260aacf40824122d09f627a44",
+   "in_git": false
+  },
+  "21539": {
+   "label": "FINAL - settle 8",
+   "path": "/home/dn/Frontier-qwen3-profiling/data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+   "md5": "3635e4d305ae5cf84884e275d3ff37ef",
+   "in_git": true
+  }
+ },
+ "figures": [
+  {
+   "file": "s04_gc_spike_per_repetition_v2.png",
+   "slide": 4,
+   "op": "attn_pre_proj",
+   "tps": [
+    1
+   ],
+   "steps": [
+    {
+     "job": "21313",
+     "label": "original dense grid",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "97d6255414b26760c0295666c39212b2",
+     "in_git": true
+    }
+   ],
+   "token_range": "single shape, 53 samples",
+   "y_limits_ms": {
+    "log_y": [
+     0.0930431996830549,
+     214.03989033007147
+    ]
+   },
+   "caveats": [
+    "Rebuilt from the REAL per-repetition samples. v1's README wrongly said job 21313 kept no samples; it stores 53 per shape (106 for emb).",
+    "DELIBERATE style exception: log y, because the spike is ~1,100x the row median.",
+    "Spike is at absolute 0-based sample 14 (the 15th forward) = 0-based timed run 11. The docs' 'timed run 11' is 0-BASED.",
+    "Per-TP max over the 32 affected rows of job 21313: {1: [150.4, 242.8], 2: [151.0, 255.1], 4: [156.4, 268.6], 8: [152.9, 263.9]}. Job 21334 (rerun) spans 146.4-287.7 ms."
+   ],
+   "spike_abs_index_0based": 14,
+   "spike_timed_run_0based": 11,
+   "per_tp_max_ms_job21313": {
+    "1": [
+     150.4,
+     242.8
+    ],
+    "2": [
+     151.0,
+     255.1
+    ],
+    "4": [
+     156.4,
+     268.6
+    ],
+    "8": [
+     152.9,
+     263.9
+    ]
+   },
+   "affected_rows": 32
+  },
+  {
+   "file": "s05_pre_proj_tp8_hostbound_vs_gpubound_v2.png",
+   "slide": 5,
+   "op": "attn_pre_proj",
+   "tps": [
+    8
+   ],
+   "steps": [
+    {
+     "job": "21361",
+     "label": "GC fix",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling_gcfix/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "9381d3edaa8acc3dcd96b97e1dcced2b",
+     "in_git": true
+    },
+    {
+     "job": "21356",
+     "label": "X1 backlog-knob diagnostic",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dip_x1/linear_op.csv",
+     "md5": "93704fef545586d2847c0f6fd68bcc30",
+     "in_git": false
+    }
+   ],
+   "token_range": "full range (21356 from 1,024)",
+   "y_limits_ms": {
+    "all": [
+     0.0,
+     0.12696479916572573
+    ]
+   },
+   "caveats": [
+    "RELABELLED: v1 called these 'it 1' and 'it 2'. Job 21356 is the X1 DIAGNOSTIC (4,800 rows, tokens >=1,024, single-column legacy timer + FRONTIER_GPU_BACKLOG_MS=100), not a dataset iteration.",
+    "The two passes differ in CLOCK STATE as well as queue state: a fixed 20M-cycle spin measures 1.93-2.08 M cycles/ms from idle vs 2.38-2.40 after a first spin (~2.0 vs ~2.4 GHz). The gap is therefore not purely the instrument.",
+    "Shaded region 2-6,704 tokens computed from the data (argmax->argmin of a 501-point rolling median; 0.0941 -> 0.0737 ms). The old slide shaded 4,000-6,000.",
+    "The two jobs also differ in grid (3,327 vs 1,200 token counts)."
+   ],
+   "shaded_tokens": [
+    2,
+    6704
+   ],
+   "rolling_median_ms": [
+    0.09408999979496,
+    0.073719996958971
+   ]
+  },
+  {
+   "file": "s06_rope_fallback_vs_fused_v2.png",
+   "slide": 6,
+   "op": "attn_rope",
+   "tps": [
+    1
+   ],
+   "steps": [
+    {
+     "job": "21356",
+     "label": "X1 backlog-knob diagnostic",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dip_x1/linear_op.csv",
+     "md5": "93704fef545586d2847c0f6fd68bcc30",
+     "in_git": false
+    },
+    {
+     "job": "21483",
+     "label": "two-column + fused RoPE",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed/linear_op.csv",
+     "md5": "1d84b3d1957b2c977afbbbd43c694f2c",
+     "in_git": false
+    }
+   ],
+   "token_range": "1-2,048",
+   "y_limits_ms": {
+    "all": [
+     0.0,
+     0.07246799960732453
+    ]
+   },
+   "caveats": [
+    "RELABELLED by job. The fallback line covers only 1,024-2,048 tokens because job 21356's grid starts at 1,024.",
+    "The two jobs differ in repetitions (50 vs 25), timer (single- vs two-column) and grid, so the ratio mixes the KERNEL change with the TIMING change. It cannot be decomposed from this data.",
+    "Controls across the same job pair: attn_pre_proj and attn_post_proj agree within 1.2 % (see numbers_v2.md)."
+   ]
+  },
+  {
+   "file": "appendix_iteration_ratio_to_final_v2.png",
+   "slide": "appendix",
+   "op": "attn_pre_proj",
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "job": "21313",
+     "label": "original dense grid",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "97d6255414b26760c0295666c39212b2",
+     "in_git": true
+    },
+    {
+     "job": "21361",
+     "label": "GC fix",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling_gcfix/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "9381d3edaa8acc3dcd96b97e1dcced2b",
+     "in_git": true
+    },
+    {
+     "job": "21483",
+     "label": "two-column + fused RoPE",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed/linear_op.csv",
+     "md5": "1d84b3d1957b2c977afbbbd43c694f2c",
+     "in_git": false
+    },
+    {
+     "job": "21500",
+     "label": "batch-flush fix",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed_batchflush/linear_op.csv",
+     "md5": "cd405d64289b0b42e8916ba24574ba01",
+     "in_git": false
+    },
+    {
+     "job": "21519",
+     "label": "gemm_alloc backlog, settle 3",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed_workbacklog/linear_op.csv",
+     "md5": "7016bd6260aacf40824122d09f627a44",
+     "in_git": false
+    },
+    {
+     "job": "21539",
+     "label": "FINAL - settle 8",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+     "md5": "3635e4d305ae5cf84884e275d3ff37ef",
+     "in_git": true
+    }
+   ],
+   "token_range": "1-16,384",
+   "y_limits_ms": {
+    "log_y_all_panels": [
+     0.8467008248027718,
+     6.221245360764283
+    ]
+   },
+   "caveats": [
+    "ADDS jobs 21500 and 21519, which v1 omitted. Job 21519 is the step that first reaches ~1.000, so it answers the appendix's question.",
+    "Job 21356 is NOT shown: it is a diagnostic on a different grid and timer, not an iteration.",
+    "Ratios are per-token on the token counts each pair shares."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,442 @@
+{
+ "generated_by": "make_presentation_figures.py",
+ "step_mapping": {
+  "original": {
+   "dataset": "D1",
+   "job": "21313",
+   "meaning": "original",
+   "note": "first re-collection, host-bound, torch-fallback RoPE"
+  },
+  "it1": {
+   "dataset": "D2",
+   "job": "21361",
+   "meaning": "GC removed",
+   "note": "host-bound, torch-fallback RoPE"
+  },
+  "it2": {
+   "dataset": "D3",
+   "job": "21356",
+   "meaning": "GPU-bound (host fix)",
+   "note": "GPU-bound, torch-fallback RoPE, tokens >= 1,024 only"
+  },
+  "it3": {
+   "dataset": "D4",
+   "job": "21483",
+   "meaning": "RoPE fix",
+   "note": "GPU-bound, fused RoPE"
+  },
+  "final": {
+   "dataset": "D5",
+   "job": "21539",
+   "meaning": "final",
+   "note": "GPU-bound, fused RoPE, run-position fixes"
+  }
+ },
+ "sources": {
+  "original": {
+   "dataset": "D1",
+   "source": "source CSV",
+   "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+   "md5": "97d6255414b26760c0295666c39212b2",
+   "cache_md5": "97d6255414b26760c0295666c39212b2",
+   "source_matches_cache": true,
+   "job": "21313"
+  },
+  "it1": {
+   "dataset": "D2",
+   "source": "source CSV",
+   "path": "/home/dn/Frontier-qwen3-profiling/data/profiling_gcfix/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+   "md5": "9381d3edaa8acc3dcd96b97e1dcced2b",
+   "cache_md5": "9381d3edaa8acc3dcd96b97e1dcced2b",
+   "source_matches_cache": true,
+   "job": "21361"
+  },
+  "it2": {
+   "dataset": "D3",
+   "source": "source CSV",
+   "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dip_x1/linear_op.csv",
+   "md5": "93704fef545586d2847c0f6fd68bcc30",
+   "cache_md5": "93704fef545586d2847c0f6fd68bcc30",
+   "source_matches_cache": true,
+   "job": "21356"
+  },
+  "it3": {
+   "dataset": "D4",
+   "source": "source CSV",
+   "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed/linear_op.csv",
+   "md5": "1d84b3d1957b2c977afbbbd43c694f2c",
+   "cache_md5": "1d84b3d1957b2c977afbbbd43c694f2c",
+   "source_matches_cache": true,
+   "job": "21483"
+  },
+  "final": {
+   "dataset": "D5",
+   "source": "source CSV",
+   "path": "/home/dn/Frontier-qwen3-profiling/data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+   "md5": "3635e4d305ae5cf84884e275d3ff37ef",
+   "cache_md5": "3635e4d305ae5cf84884e275d3ff37ef",
+   "source_matches_cache": true,
+   "job": "21539"
+  }
+ },
+ "cache_fallbacks": [],
+ "figures": [
+  {
+   "file": "s02_pre_proj_original.png",
+   "slide": 2,
+   "op": "attn_pre_proj",
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "step": "original",
+     "plain": "original",
+     "dataset": "D1",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "97d6255414b26760c0295666c39212b2",
+     "job": "21313"
+    }
+   ],
+   "token_range": "full (1-16,384) and 1-2,048",
+   "y_limits_ms": {
+    "full range": [
+     0.0,
+     0.6811565387248993
+    ],
+    "num_tokens \u2264 2,048": [
+     0.0,
+     0.14873760402202607
+    ]
+   },
+   "caveats": [
+    "y-limits are shared with the other all-TP figure (s02/s03) panel-by-panel, but differ between the full and zoom panels (otherwise the zoom is unreadable)."
+   ]
+  },
+  {
+   "file": "s03_pre_proj_final_all_tp.png",
+   "slide": 3,
+   "op": "attn_pre_proj",
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "step": "final",
+     "plain": "final",
+     "dataset": "D5",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+     "md5": "3635e4d305ae5cf84884e275d3ff37ef",
+     "job": "21539"
+    }
+   ],
+   "token_range": "full (1-16,384) and 1-2,048",
+   "y_limits_ms": {
+    "full range": [
+     0.0,
+     0.6811565387248993
+    ],
+    "num_tokens \u2264 2,048": [
+     0.0,
+     0.14873760402202607
+    ]
+   },
+   "caveats": [
+    "y-limits are shared with the other all-TP figure (s02/s03) panel-by-panel, but differ between the full and zoom panels (otherwise the zoom is unreadable)."
+   ]
+  },
+  {
+   "file": "s04_gc_spike_per_repetition.png",
+   "slide": 4,
+   "op": "attn_pre_proj",
+   "tps": [
+    1
+   ],
+   "steps": [
+    {
+     "step": "original",
+     "plain": "original",
+     "dataset": "D1",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "97d6255414b26760c0295666c39212b2",
+     "job": "21313"
+    }
+   ],
+   "token_range": "1-16,384",
+   "y_limits_ms": {
+    "log_y": [
+     0.03397310653225586,
+     370.5009583739327
+    ]
+   },
+   "caveats": [
+    "DELIBERATE EXCEPTION to 'linear y from 0, medians only': log y, because the spike (150-290 ms) is ~1,000x the median (~0.1 ms) and a single sample.",
+    "Built from the min/max/median columns (per-shape aggregates over 50 reps); per-repetition samples are not stored for this step.",
+    "Spike token counts at TP 1: 1968-1975."
+   ],
+   "spike_tokens": [
+    1968,
+    1969,
+    1970,
+    1971,
+    1972,
+    1973,
+    1974,
+    1975
+   ],
+   "spike_max_ms": [
+    150.4,
+    242.8,
+    150.6,
+    167.6,
+    151.0,
+    198.5,
+    154.7,
+    200.3
+   ]
+  },
+  {
+   "file": "s05_pre_proj_tp8_hostbound_vs_gpubound.png",
+   "slide": 5,
+   "op": "attn_pre_proj",
+   "tps": [
+    8
+   ],
+   "steps": [
+    {
+     "step": "it1",
+     "plain": "GC removed",
+     "dataset": "D2",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling_gcfix/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "9381d3edaa8acc3dcd96b97e1dcced2b",
+     "job": "21361"
+    },
+    {
+     "step": "it2",
+     "plain": "GPU-bound (host fix)",
+     "dataset": "D3",
+     "source": "source CSV",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dip_x1/linear_op.csv",
+     "md5": "93704fef545586d2847c0f6fd68bcc30",
+     "job": "21356"
+    }
+   ],
+   "token_range": "full (it 2 has data from 1,024 only)",
+   "y_limits_ms": {
+    "all": [
+     0.0,
+     0.12696479916572573
+    ]
+   },
+   "caveats": [
+    "Shaded region = 2-6,704 tokens, computed from the data: argmax -> argmin of a 501-point rolling median (~15% of the grid) of the host-bound curve (used for detection only; the plotted curves are the raw medians). Rolling-median values at the ends: 0.0941 -> 0.0737 ms.",
+    "it 2 (GPU-bound) has no data below 1,024 tokens, so its line starts at 1,024.",
+    "The old slide shaded 4,000-6,000."
+   ],
+   "shaded_tokens": [
+    2,
+    6704
+   ],
+   "rolling_median_ms": [
+    0.09408999979496,
+    0.073719996958971
+   ]
+  },
+  {
+   "file": "s06_rope_fallback_vs_fused.png",
+   "slide": 6,
+   "op": "attn_rope",
+   "tps": [
+    1
+   ],
+   "steps": [
+    {
+     "step": "it2",
+     "plain": "GPU-bound (host fix)",
+     "dataset": "D3",
+     "source": "source CSV",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dip_x1/linear_op.csv",
+     "md5": "93704fef545586d2847c0f6fd68bcc30",
+     "job": "21356"
+    },
+    {
+     "step": "it3",
+     "plain": "RoPE fix",
+     "dataset": "D4",
+     "source": "source CSV",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed/linear_op.csv",
+     "md5": "1d84b3d1957b2c977afbbbd43c694f2c",
+     "job": "21483"
+    }
+   ],
+   "token_range": "1-2,048",
+   "y_limits_ms": {
+    "all": [
+     0.0,
+     0.07246799960732453
+    ]
+   },
+   "caveats": [
+    "'torch fallback' = GPU-bound dataset D3 (job 21356), 'fused' = D4 (job 21483). D3 only has tokens >= 1,024, so the fallback line covers 1,024-2,048 only.",
+    "The host-bound fallback data (D1/D2) cover the full 1-2,048 range but measure host launch time, not GPU time; they are deliberately not used here."
+   ]
+  },
+  {
+   "file": "s07_pre_proj_before_after.png",
+   "slide": 7,
+   "op": "attn_pre_proj",
+   "tps": [
+    1,
+    8
+   ],
+   "steps": [
+    {
+     "step": "original",
+     "plain": "original",
+     "dataset": "D1",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "97d6255414b26760c0295666c39212b2",
+     "job": "21313"
+    },
+    {
+     "step": "final",
+     "plain": "final",
+     "dataset": "D5",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+     "md5": "3635e4d305ae5cf84884e275d3ff37ef",
+     "job": "21539"
+    }
+   ],
+   "token_range": "1-2,048",
+   "y_limits_ms": {
+    "both_panels": [
+     0.0,
+     0.14873760402202607
+    ]
+   },
+   "caveats": [
+    "Both panels share the same y-limits (as requested); TP 1 sets the scale."
+   ]
+  },
+  {
+   "file": "s07_pre_proj_before_after_full.png",
+   "slide": 7,
+   "op": "attn_pre_proj",
+   "tps": [
+    1,
+    8
+   ],
+   "steps": [
+    {
+     "step": "original",
+     "plain": "original",
+     "dataset": "D1",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "97d6255414b26760c0295666c39212b2",
+     "job": "21313"
+    },
+    {
+     "step": "final",
+     "plain": "final",
+     "dataset": "D5",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+     "md5": "3635e4d305ae5cf84884e275d3ff37ef",
+     "job": "21539"
+    }
+   ],
+   "token_range": "full (1-16,384)",
+   "y_limits_ms": {
+    "both_panels": [
+     0.0,
+     0.6811565387248993
+    ]
+   },
+   "caveats": [
+    "Both panels share the same y-limits (as requested), so TP 8 looks compressed on the full-range version."
+   ]
+  },
+  {
+   "file": "appendix_iteration_ratio_to_final.png",
+   "slide": "appendix",
+   "op": "attn_pre_proj",
+   "tps": [
+    1,
+    2,
+    4,
+    8
+   ],
+   "steps": [
+    {
+     "step": "original",
+     "plain": "original",
+     "dataset": "D1",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "97d6255414b26760c0295666c39212b2",
+     "job": "21313"
+    },
+    {
+     "step": "it1",
+     "plain": "GC removed",
+     "dataset": "D2",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/profiling_gcfix/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv",
+     "md5": "9381d3edaa8acc3dcd96b97e1dcced2b",
+     "job": "21361"
+    },
+    {
+     "step": "it2",
+     "plain": "GPU-bound (host fix)",
+     "dataset": "D3",
+     "source": "source CSV",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dip_x1/linear_op.csv",
+     "md5": "93704fef545586d2847c0f6fd68bcc30",
+     "job": "21356"
+    },
+    {
+     "step": "it3",
+     "plain": "RoPE fix",
+     "dataset": "D4",
+     "source": "source CSV",
+     "path": "/tmp/claude-1001/-home-dn-Frontier-qwen3-profiling/839301bf-3ea8-4d67-9dad-d3ac176a2add/scratchpad/cluster_data/profiling_dense_fixed/linear_op.csv",
+     "md5": "1d84b3d1957b2c977afbbbd43c694f2c",
+     "job": "21483"
+    },
+    {
+     "step": "final",
+     "plain": "final",
+     "dataset": "D5",
+     "source": "source CSV",
+     "path": "/home/dn/Frontier-qwen3-profiling/data/local_datasets/mi355x/qwen3-a3b-30b-moe/linear_op/2026-09-23_0949_dense_workbacklog_settle8/linear_op.csv",
+     "md5": "3635e4d305ae5cf84884e275d3ff37ef",
+     "job": "21539"
+    }
+   ],
+   "token_range": "1-16,384 (it 2: from 1,024)",
+   "y_limits_ms": {
+    "log_y_all_panels": [
+     0.8650258052220955,
+     6.221245360764283
+    ]
+   },
+   "caveats": [
+    "Diagnostic, not for the main deck. Ratios are per-token (step median / final median) on the token counts both datasets share.",
+    "The brief asks for 'it 4'; no such full-grid step exists in the notebook (see README 'Step mapping'), so the four non-final steps are original, it 1, it 2, it 3."
+   ]
+  }
+ ]
+}

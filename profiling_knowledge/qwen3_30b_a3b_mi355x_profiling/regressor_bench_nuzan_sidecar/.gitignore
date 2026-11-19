@@ -1,0 +1,5 @@
+# side investigation outputs; regenerate with run_sidecar.py. The extracted old CSV comes from git history:
+#   git show 3d1cabd:data/profiling/compute/mi355x/qwen3-a3b-30b-moe/linear_op.csv > data/nuzan_original_linear_op.csv
+results/
+data/
+__pycache__/

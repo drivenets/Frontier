@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Project walkthrough</title>
+<style>
+:root{
+  --paper:#F1F2EE; --ink:#10141B; --prior:#7A5200; --ours:#0A3FC4; --tbd:#C4175F; --mute:#5B6472;
+  --line:#C5C9CE; --white:#FFFFFF;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --top:3.6rem; --railw:17.5rem;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{font-size:clamp(16px,.6vw + 10px,22px);scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 1rem/1.5 var(--sans)}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:var(--ours)}
+:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.skip{position:absolute;left:-999px;top:0;background:var(--ink);color:var(--paper);padding:.5rem 1rem;z-index:50}
+.skip:focus{left:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- shell ---------- */
+.top{position:sticky;top:0;z-index:20;height:var(--top);display:flex;align-items:center;gap:1rem;padding:0 1.25rem;background:var(--ink);color:var(--paper);border-bottom:4px solid var(--paper)}
+.top h1{font:800 1.05rem/1 var(--sans);letter-spacing:.02em;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top button{background:transparent;border:2px solid var(--paper);color:var(--paper);padding:.4rem .8rem;font:700 .8rem/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.top button[aria-pressed="true"]{background:var(--paper);color:var(--ink)}
+.top button:focus-visible{outline-color:var(--paper)}
+.app{display:grid;grid-template-columns:var(--railw) minmax(0,1fr);align-items:start}
+.rail{position:sticky;top:var(--top);height:calc(100vh - var(--top));overflow-y:auto;padding:1rem .75rem 1rem .5rem;border-right:2px solid var(--ink);background:var(--paper)}
+.rail ol{list-style:none;margin:0;padding:0;position:relative}
+.rail ol::before{content:"";position:absolute;left:1.1rem;top:.6rem;bottom:.6rem;width:4px;background:var(--ink);transform:translateX(-2px)}
+.r-item{position:relative;display:grid;grid-template-columns:2.2rem 1fr;gap:.4rem;width:100%;text-align:left;background:transparent;border:0;border-left:0;padding:.45rem .4rem .45rem 0}
+.r-item:hover .r-t{text-decoration:underline}
+.r-item.on{background:var(--white);box-shadow:inset 4px 0 0 var(--ink)}
+.node{justify-self:center;align-self:center;background:var(--ink);border:3px solid var(--paper);box-sizing:content-box;position:relative;z-index:1}
+.node.prior{background:var(--prior);border-radius:0}
+.node.ours{background:var(--ours);border-radius:50%}
+.node.mixed{background:linear-gradient(90deg,var(--prior) 50%,var(--ours) 50%);border-radius:50%}
+.node.sys{width:10px;height:10px;border-radius:0;transform:rotate(45deg)}
+.node.d-stub{width:10px;height:10px}.node.d-summary{width:16px;height:16px}.node.d-full{width:24px;height:24px}
+.r-t{font-weight:700;line-height:1.2;font-size:.95rem}
+.r-num{font:700 .8rem var(--mono);color:var(--mute);margin-right:.35rem}
+.r-meta{display:flex;flex-wrap:wrap;gap:.3rem .5rem;align-items:center;margin-top:.2rem;font:600 .72rem/1.2 var(--mono);color:var(--mute);letter-spacing:.04em}
+.r-meta .hv{color:var(--ink)}
+.keys{margin:1rem 0 0 .5rem;padding-top:.8rem;border-top:2px solid var(--line);font:500 .74rem/1.7 var(--mono);color:var(--mute)}
+kbd{font:700 .72rem var(--mono);border:1.5px solid var(--ink);padding:0 .3em;background:var(--white);color:var(--ink)}
+main{padding:1.5rem clamp(1rem,3vw,3rem) 4rem;min-width:0;outline:none}
+section[data-seq],article[data-seq]{scroll-margin-top:calc(var(--top) + 1rem)}
+
+/* ---------- badges ---------- */
+.badge{display:inline-flex;align-items:center;gap:.45em;font:700 .74rem/1 var(--mono);letter-spacing:.08em;padding:.4em .6em;border:2px solid var(--ink);text-transform:uppercase;background:var(--white);white-space:nowrap}
+.badge .g{display:inline-block;width:.75em;height:.75em;background:currentColor}
+.badge.prior{border-color:var(--prior);color:var(--prior)}
+.badge.ours{background:var(--ours);border-color:var(--ours);color:#fff}
+.badge.ours .g{border-radius:50%}
+.badge.mixed{border:2px solid transparent;border-image:linear-gradient(90deg,var(--prior) 50%,var(--ours) 50%) 1;color:var(--ink)}
+.badge.mixed .g{background:linear-gradient(90deg,var(--prior) 50%,var(--ours) 50%);border-radius:50%}
+.badge.depth{border-color:var(--mute);color:var(--ink);background:transparent}
+.tbd{display:inline-block;background:var(--tbd);color:#fff;font:800 .7rem/1 var(--mono);letter-spacing:.1em;padding:.3em .5em;vertical-align:middle}
+.is-tbd{outline:3px dashed var(--tbd);outline-offset:5px}
+
+/* ---------- overview ---------- */
+.ov h2{font:800 clamp(2.2rem,4.4vw,4rem)/1.02 var(--sans);letter-spacing:-.02em;margin:.2rem 0 .6rem;max-width:20ch}
+.ov .sub{font-size:1.3rem;color:var(--mute);max-width:46ch;margin:0 0 2rem}
+.claim{border-left:10px solid var(--ink);padding:.3rem 0 .3rem 1.2rem;font:700 clamp(1.4rem,2.4vw,2.2rem)/1.2 var(--sans);max-width:30ch;margin:0 0 2.2rem}
+.legend-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem 2rem;max-width:60rem;border-top:2px solid var(--ink);padding-top:1rem}
+.legend-grid p{margin:.4rem 0 0;font-size:.95rem}
+.start{margin-top:2rem;font:700 .9rem var(--mono);color:var(--mute)}
+
+/* ---------- phase ---------- */
+.phase{--c:var(--ink);border-top:10px solid var(--c);padding:1rem 0 1.6rem;margin-bottom:2.4rem}
+.phase.prior{--c:var(--prior)}.phase.ours{--c:var(--ours)}
+.phase.mixed{border-top:10px solid transparent;border-image:linear-gradient(90deg,var(--prior) 50%,var(--ours) 50%) 1}
+.phase.collapsed{cursor:pointer}
+.p-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.4rem 1.2rem;align-items:start}
+.p-num{font:800 clamp(2rem,3.2vw,3rem)/1 var(--mono);color:var(--c)}
+.phase.mixed .p-num{color:var(--ink)}
+.p-title{margin:0;font:800 clamp(1.4rem,2.2vw,2.1rem)/1.1 var(--sans);letter-spacing:-.01em}
+.tags{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.6rem}
+.dep{font:700 .8rem var(--mono);color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.tgl{background:var(--white);border:2px solid var(--ink);padding:.4rem .7rem;font:700 .78rem/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.tgl:hover{background:var(--ink);color:var(--paper)}
+.p-hl{grid-column:1 / -1}
+.hl{display:inline-block;margin-top:1rem;padding:.5rem .9rem .6rem}
+.hl-label{font:700 .8rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:.15rem}
+.hl-nums{font:800 2rem/1 var(--mono);display:flex;align-items:baseline;gap:.5em;flex-wrap:wrap}
+.hl.big .hl-nums{font-size:clamp(3rem,6.4vw,6rem);letter-spacing:-.03em}
+.hb{color:var(--prior)}.ha{color:var(--ours)}
+.hl-arrow{color:var(--ink);font-weight:400}
+.hl.big{padding:.6rem 1.1rem .8rem}
+.p-body{margin-top:1rem}
+.sum{display:grid;gap:.6rem;margin:0;max-width:60rem}
+.sum div{display:grid;grid-template-columns:6.5rem minmax(0,1fr);gap:1rem;border-top:1px solid var(--line);padding-top:.6rem}
+.sum dt{font:700 .8rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);padding-top:.2em}
+.sum dd{margin:0;font-size:1.1rem}
+.one{font-size:1.15rem;max-width:60rem;margin:0}
+.hint{margin:.8rem 0 0;font:600 .78rem var(--mono);color:var(--mute);letter-spacing:.04em}
+.beats{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"b m" "p o" "w w";gap:1.4rem 2.2rem}
+.beat{min-width:0;border-top:4px solid var(--ink);padding-top:.5rem}
+.beat.before{border-top-color:var(--prior)}.beat.after{border-top-color:var(--ours)}
+.beat.b{grid-area:b}.beat.p{grid-area:p}.beat.m{grid-area:m}.beat.o{grid-area:o}.beat.w{grid-area:w}
+.beat h3{margin:0 0 .4rem;font:800 .85rem/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;gap:.6rem}
+.beat h3 .n{display:inline-grid;place-items:center;width:1.6rem;height:1.6rem;background:var(--ink);color:var(--paper);font-size:.8rem}
+.beat.before h3 .n{background:var(--prior)}.beat.after h3 .n{background:var(--ours)}
+.beat h3 .side{color:var(--mute);font-weight:600}
+.beat p{margin:.2rem 0 .6rem;font-size:1.1rem}
+.beat .move{font:800 1.35rem/1.25 var(--sans)}
+.nums{font:700 1rem var(--mono);color:var(--prior)}
+.caveats{margin:.4rem 0 0;padding-left:1.2rem;font-size:1rem}
+.caveats li::marker{content:"▲ ";color:var(--ink)}
+.warn{font:700 .8rem var(--mono);color:var(--tbd);border:2px solid var(--tbd);padding:.4rem .6rem;margin:.4rem 0}
+.muted{color:var(--mute)}
+
+/* ---------- chart ---------- */
+figure.chart{margin:.6rem 0 0;padding:.5rem .6rem .6rem;background:var(--white);border:2px solid var(--ink)}
+figure.chart.is-tbd{border:3px dashed var(--tbd);outline:0}
+figure.chart figcaption{display:flex;justify-content:space-between;align-items:center;gap:.5rem;font:700 .74rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:.2rem}
+figure.chart>svg{display:block;width:100%;height:auto}
+.grid{stroke:var(--line);stroke-width:1}
+.axis{stroke:var(--ink);stroke-width:2}
+.tick{font:600 15px var(--mono);fill:var(--ink)}
+.axl{font:700 16px var(--sans);fill:var(--ink)}
+.vlab{font:700 15px var(--mono);fill:var(--ink)}
+.vlab.tbdv{fill:var(--tbd);font-style:italic}
+.anno{font:700 16px var(--sans);fill:var(--ink);paint-order:stroke;stroke:var(--white);stroke-width:5px;stroke-linejoin:round}
+.anno-line{stroke:var(--ink);stroke-width:2}
+.tbdbox{fill:var(--white);stroke:var(--tbd);stroke-width:2.5;stroke-dasharray:5 3}
+.tbdtxt{font:800 15px var(--mono);fill:var(--tbd);letter-spacing:.1em}
+.legend{list-style:none;margin:.3rem 0 0;padding:0;display:flex;flex-wrap:wrap;gap:.3rem 1.2rem;font-size:.9rem}
+.legend li{display:flex;align-items:center;gap:.4rem}
+.legend .role{font:700 .66rem var(--mono);letter-spacing:.08em;color:var(--mute);font-style:normal}
+
+/* ---------- map ---------- */
+.map h2{font:800 clamp(1.8rem,3vw,2.6rem)/1.1 var(--sans);margin:.2rem 0 .3rem}
+.tablewrap{overflow-x:auto;border-top:4px solid var(--ink)}
+table.cm{border-collapse:collapse;width:100%;min-width:48rem;font-size:1rem}
+.cm th{font:800 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:.7rem .7rem;border-bottom:2px solid var(--ink);color:var(--mute);white-space:nowrap}
+.cm td{vertical-align:top;padding:.8rem .7rem;border-bottom:1px solid var(--line)}
+.cm tr.row{cursor:pointer}
+.cm tr.row:hover td{background:var(--white)}
+.cm .ph-t{font-weight:800;display:block;margin-bottom:.35rem}
+.cm .gain{display:inline-block;padding:.4rem .6rem;font:800 1.05rem var(--mono);white-space:nowrap}
+.cm .gain small{display:block;font:600 .72rem var(--mono);color:var(--mute);letter-spacing:.04em;white-space:normal}
+.cm .arrow{color:var(--mute)}
+.cm td.fixc{border-left:4px solid var(--ours)}
+
+/* ---------- responsive ---------- */
+@media (max-width:1000px){
+  .beats{grid-template-columns:minmax(0,1fr);grid-template-areas:"b" "p" "m" "o" "w"}
+}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static;height:auto;border-right:0;border-bottom:2px solid var(--ink);overflow-x:auto;overflow-y:visible;padding:.6rem}
+  .rail ol{display:flex;gap:.4rem}
+  .rail ol::before{display:none}
+  .r-item{min-width:11rem}
+  .keys{display:none}
+  .p-head{grid-template-columns:auto minmax(0,1fr)}
+  .p-head .tgl{grid-column:1 / -1;justify-self:start}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <h1 id="ptitle"></h1>
+  <button id="btnOverview" type="button">Overview <span class="sr">(Escape)</span></button>
+  <button id="btnAll" type="button" aria-pressed="false">Expand all <span class="sr">(A)</span></button>
+</header>
+<div class="app">
+  <nav class="rail" aria-label="Phases" id="rail"></nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div class="sr" aria-live="polite" id="live"></div>
+
+<script>
+/* =====================================================================
+   PROJECT CONFIG  -  all content lives here. Edit this block only.
+   - depth: "full" | "summary" | "stub"   (one field controls how much shows)
+   - provenance: "prior" | "ours" | "mixed"
+   - headline.placeholder / series.placeholder = true  -> shown as TBD
+   - ChartSpec.errorBars: one entry per point; a number means +/- value,
+     a [low, high] pair means absolute bounds.
+   - Bar charts: points are [category, value]. Scatter: a series with
+     role "reference" is drawn as a thin line (e.g. ideal y=x).
+   - Pitfall chart and outcome chart are forced onto the SAME axes
+     (the pitfall chart's yRange is used for both).
+   - Phase numbers on screen are list positions (1, 2, 3 ...), not ids.
+   ===================================================================== */
+const PROJECT = {
+  title: "Project title",
+  subtitle: "One-line framing of the whole project",
+  headlineClaim: "The single sentence we want people to remember",
+  phases: [
+    {
+      id: "p1", title: "Reproduce the baseline", depth: "stub", provenance: "prior",
+      oneLiner: "Re-ran the existing tool end to end to confirm its published numbers.",
+      headline: { label: "Reproduced result", before: 0, after: 0, unit: "", placeholder: true }
+    },
+    {
+      id: "p3", title: "Fix the evaluation method", depth: "summary", dependsOn: ["p1"], provenance: "ours",
+      oneLiner: "Baseline error looked low only because it was measured on training data.",
+      headline: { label: "Held-out error", before: 4, after: 19, unit: "%", placeholder: true },
+      summary: {
+        problem: "Reported error was measured on the data the model was trained on.",
+        fix: "Evaluate on a held-out set with a clean split.",
+        result: "Honest error is higher than reported, which is the real baseline to beat."
+      }
+    },
+    {
+      id: "p5", title: "Our estimator", depth: "full", dependsOn: ["p3"], provenance: "ours",
+      oneLiner: "A first-principles model replaces the learned fit.",
+      headline: { label: "Held-out error", before: 19, after: 7, unit: "%", placeholder: true },
+      baseline:  { text: "Existing estimator, evaluated honestly in phase 2.", numbers: "19% held-out error" },
+      pitfall:   { text: "Error spikes on large inputs because the model never saw that regime.",
+                   evidenceChart: { type: "line", xLabel: "Input size", yLabel: "Error (%)", yRange: [0, 40],
+                     series: [{ name: "Baseline", role: "baseline", points: [[1,5],[2,6],[4,12],[8,35]], placeholder: true }],
+                     annotations: [{ x: 8, y: 35, text: "fails at large sizes" }] } },
+      ourMove:   { text: "Replace the learned fit with a physics-based first-principles model." },
+      outcome:   { text: "Error stays low across the full range.",
+                   chart: { type: "line", xLabel: "Input size", yLabel: "Error (%)", yRange: [0, 40],
+                     series: [
+                       { name: "Baseline", role: "baseline", points: [[1,5],[2,6],[4,12],[8,35]], placeholder: true },
+                       { name: "Ours", role: "ours", points: [[1,4],[2,5],[4,6],[8,7]], placeholder: true } ] } },
+      whyBetter: { text: "The model extrapolates because it encodes the mechanism, not just past samples.",
+                   caveats: ["Validated on one hardware target so far."] }
+    },
+    {
+      id: "p6", title: "Chart demo: grouped bars", depth: "summary", dependsOn: ["p5"], provenance: "mixed",
+      oneLiner: "Demo phase for the bar chart with error bars. Replace or delete.",
+      headline: { label: "Mean error", before: 12, after: 5, unit: "%", placeholder: true },
+      summary: { problem: "Placeholder: one operator is far worse than the others.",
+                 fix: "Placeholder: calibrate that operator separately.",
+                 result: "Placeholder: all operators within range." },
+      baseline:  { text: "Placeholder baseline per operator.", numbers: "12% mean error" },
+      pitfall:   { text: "Operator C is far worse than A and B.",
+                   evidenceChart: { type: "bar", xLabel: "Operator", yLabel: "Error (%)", yRange: [0, 30],
+                     series: [{ name: "Baseline", role: "baseline", points: [["A",8],["B",10],["C",24]], errorBars: [2,3,6], placeholder: true }],
+                     annotations: [{ x: "C", y: 24, text: "outlier operator" }] } },
+      ourMove:   { text: "Calibrate each operator separately." },
+      outcome:   { text: "All three operators fall under the same limit.",
+                   chart: { type: "bar", xLabel: "Operator", yLabel: "Error (%)", yRange: [0, 30],
+                     series: [
+                       { name: "Baseline", role: "baseline", points: [["A",8],["B",10],["C",24]], errorBars: [2,3,6], placeholder: true },
+                       { name: "Ours", role: "ours", points: [["A",5],["B",5],["C",6]], errorBars: [1,1.5,2], placeholder: true } ] } },
+      whyBetter: { text: "Placeholder: separate calibration removes the shared-fit bias.", caveats: ["Placeholder numbers only."] }
+    },
+    {
+      id: "p7", title: "Chart demo: scatter", depth: "summary", dependsOn: ["p6"], provenance: "ours",
+      oneLiner: "Demo phase for the scatter chart with a reference line. Replace or delete.",
+      headline: { label: "Max miss", before: 40, after: 9, unit: " ms", placeholder: true },
+      summary: { problem: "Placeholder: predictions drift from actuals at large values.",
+                 fix: "Placeholder: refit with the large-value regime included.",
+                 result: "Placeholder: points sit on the ideal line." },
+      pitfall:   { text: "Predicted values drift below the ideal line for large actuals.",
+                   evidenceChart: { type: "scatter", xLabel: "Actual (ms)", yLabel: "Predicted (ms)", yRange: [0, 100],
+                     series: [
+                       { name: "Ideal (y = x)", role: "reference", points: [[0,0],[100,100]] },
+                       { name: "Baseline", role: "baseline", points: [[10,11],[25,24],[40,35],[60,48],[80,58],[95,62]], placeholder: true } ] } },
+      ourMove:   { text: "Refit with the large-value regime included." },
+      outcome:   { text: "Points follow the ideal line over the full range.",
+                   chart: { type: "scatter", xLabel: "Actual (ms)", yLabel: "Predicted (ms)", yRange: [0, 100],
+                     series: [
+                       { name: "Ideal (y = x)", role: "reference", points: [[0,0],[100,100]] },
+                       { name: "Baseline", role: "baseline", points: [[10,11],[25,24],[40,35],[60,48],[80,58],[95,62]], placeholder: true },
+                       { name: "Ours", role: "ours", points: [[10,10],[25,26],[40,41],[60,59],[80,81],[95,93]], placeholder: true } ] } },
+      whyBetter: { text: "Placeholder: the large-value regime is now in the training range." }
+    }
+  ],
+  contributionMap: "auto"
+};
+
+/* =====================================================================
+   GENERIC RENDERER  -  no project content below this line
+   ===================================================================== */
+const ROLE = {
+  baseline:  { label: "BASELINE",  color: "var(--prior)", shape: "square" },
+  ours:      { label: "OURS",      color: "var(--ours)",  shape: "circle" },
+  reference: { label: "REFERENCE", color: "var(--mute)",  shape: "diamond" }
+};
+const PROV = {
+  prior: { cls: "prior", label: "Prior work" },
+  ours:  { cls: "ours",  label: "Our contribution" },
+  mixed: { cls: "mixed", label: "Mixed" }
+};
+const PH = PROJECT.phases;
+const N = PH.length;
+const state = { cur: 0, reading: false, open: {} };   // cur: 0 = overview, 1..N = phases, N+1 = map
+const $ = (s) => document.querySelector(s);
+const main = $("#main"), rail = $("#rail");
+let chartSeq = 0;
+
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtNum = (v) => Number.isInteger(v) ? String(v) : String(+Number(v).toFixed(2));
+const pad2 = (n) => String(n).padStart(2, "0");
+const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const provOf = (p) => PROV[p.provenance] || PROV.mixed;
+const isOpen = (p) => (p.id in state.open) ? state.open[p.id] : (state.reading ? true : p.depth === "full");
+const secId = (i) => i === 0 ? "sec-overview" : i === N + 1 ? "sec-map" : "ph-" + PH[i - 1].id;
+
+/* ---------- charts ---------- */
+function niceTicks(r, n = 5) {
+  const a = r[0], b = r[1], span = (b - a) || 1, raw = span / (n - 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+  const out = [];
+  for (let t = Math.ceil(a / step - 1e-9) * step; t <= b + 1e-9; t += step) out.push(+t.toFixed(10));
+  return out;
+}
+function chartDomain(specs) {
+  const xs = [];
+  specs.forEach((s) => s.series.forEach((se) => se.points.forEach((pt) => xs.push(pt[0]))));
+  const anyBar = specs.some((s) => s.type === "bar");
+  if (!anyBar && xs.every((x) => typeof x === "number" && isFinite(x))) {
+    const uniq = [...new Set(xs)].sort((a, b) => a - b);
+    return { kind: "num", min: uniq[0], max: uniq[uniq.length - 1], ticks: uniq };
+  }
+  const cats = [];
+  xs.forEach((x) => { const k = String(x); if (cats.indexOf(k) < 0) cats.push(k); });
+  return { kind: "cat", cats };
+}
+function yRangeFor(specs) {
+  const given = specs.find((s) => Array.isArray(s.yRange));
+  if (given) return given.yRange;
+  let hi = 1;
+  specs.forEach((s) => s.series.forEach((se) => se.points.forEach((p, i) => {
+    const eb = se.errorBars && se.errorBars[i];
+    hi = Math.max(hi, p[1], Array.isArray(eb) ? eb[1] : (eb ? p[1] + eb : 0));
+  })));
+  return [0, hi * 1.1];
+}
+function marker(shape, cx, cy, r, col, hollow) {
+  const st = hollow ? `style="fill:var(--white);stroke:${col};stroke-width:3"` : `style="fill:${col};stroke:var(--white);stroke-width:1.5"`;
+  if (shape === "square") return `<rect x="${cx - r}" y="${cy - r}" width="${2 * r}" height="${2 * r}" ${st}/>`;
+  if (shape === "diamond") { const d = r * 1.35; return `<path d="M${cx} ${cy - d}L${cx + d} ${cy}L${cx} ${cy + d}L${cx - d} ${cy}Z" ${st}/>`; }
+  return `<circle cx="${cx}" cy="${cy}" r="${r}" ${st}/>`;
+}
+function wrapText(t, n) {
+  const L = []; let c = "";
+  String(t).split(" ").forEach((w) => { if ((c + " " + w).trim().length > n && c) { L.push(c); c = w; } else c = (c + " " + w).trim(); });
+  if (c) L.push(c);
+  return L.slice(0, 3);
+}
+function chartHTML(spec, dom, yr, caption) {
+  const id = "ch" + (++chartSeq);
+  const W = 600, H = 380, m = { l: 70, r: 24, t: 30, b: 66 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const Y = (v) => m.t + ph - (v - yr[0]) / ((yr[1] - yr[0]) || 1) * ph;
+  const nCat = dom.kind === "cat" ? dom.cats.length : 0, band = nCat ? pw / nCat : 0;
+  const X = (v) => dom.kind === "num"
+    ? m.l + (dom.max === dom.min ? pw / 2 : pw * 0.05 + pw * 0.9 * (v - dom.min) / (dom.max - dom.min))
+    : m.l + (dom.cats.indexOf(String(v)) + 0.5) * band;
+  const anyPH = spec.series.some((s) => s.placeholder);
+  let g = "";
+  // patterns for placeholder fills
+  g += `<defs><clipPath id="${id}c"><rect x="${m.l - 10}" y="${m.t - 6}" width="${pw + 20}" height="${ph + 12}"/></clipPath>` +
+    ["baseline", "ours", "reference"].map((r) =>
+      `<pattern id="${id}${r}" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)"><rect width="9" height="9" style="fill:var(--white)"/><line x1="0" y1="0" x2="0" y2="9" style="stroke:${ROLE[r].color};stroke-width:3.5"/></pattern>`).join("") + `</defs>`;
+  // y grid + ticks
+  niceTicks(yr).forEach((t) => {
+    const yy = Y(t);
+    g += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}"/><text class="tick" x="${m.l - 10}" y="${yy + 5}" text-anchor="end">${fmtNum(t)}</text>`;
+  });
+  // x ticks
+  if (dom.kind === "num") {
+    const gaps = dom.ticks.slice(1).map((v, i) => v - dom.ticks[i]);
+    const xt = dom.ticks.length <= 8 && Math.min(...gaps, Infinity) >= (dom.max - dom.min) * 0.09 ? dom.ticks : niceTicks([dom.min, dom.max]);
+    xt.forEach((t) => { g += `<line class="grid" x1="${X(t)}" x2="${X(t)}" y1="${m.t}" y2="${m.t + ph}" style="stroke-dasharray:2 4"/><text class="tick" x="${X(t)}" y="${m.t + ph + 24}" text-anchor="middle">${fmtNum(t)}</text>`; });
+  } else {
+    dom.cats.forEach((c) => { const t = c.length > 14 ? c.slice(0, 13) + "…" : c; g += `<text class="tick" x="${X(c)}" y="${m.t + ph + 24}" text-anchor="middle"><title>${esc(c)}</title>${esc(t)}</text>`; });
+  }
+  g += `<line class="axis" x1="${m.l}" x2="${W - m.r}" y1="${m.t + ph}" y2="${m.t + ph}"/><line class="axis" x1="${m.l}" x2="${m.l}" y1="${m.t}" y2="${m.t + ph}"/>`;
+  g += `<text class="axl" x="${m.l + pw / 2}" y="${H - 12}" text-anchor="middle">${esc(spec.xLabel || "")}</text>`;
+  g += `<text class="axl" transform="translate(18 ${m.t + ph / 2}) rotate(-90)" text-anchor="middle">${esc(spec.yLabel || "")}</text>`;
+
+  // series
+  let s = "";
+  const ns = spec.series.length;
+  const ebx = (cx, y, eb, col) => {
+    if (eb == null) return "";
+    const lo = Array.isArray(eb) ? eb[0] : y - eb, hi = Array.isArray(eb) ? eb[1] : y + eb;
+    return `<line x1="${cx}" x2="${cx}" y1="${Y(lo)}" y2="${Y(hi)}" style="stroke:${col};stroke-width:2.5"/>` +
+      `<line x1="${cx - 6}" x2="${cx + 6}" y1="${Y(lo)}" y2="${Y(lo)}" style="stroke:${col};stroke-width:2.5"/>` +
+      `<line x1="${cx - 6}" x2="${cx + 6}" y1="${Y(hi)}" y2="${Y(hi)}" style="stroke:${col};stroke-width:2.5"/>`;
+  };
+  spec.series.forEach((se, si) => {
+    const role = ROLE[se.role] ? se.role : "baseline", R = ROLE[role], col = R.color, tbd = !!se.placeholder;
+    const pts = se.points.map((p, i) => ({ x: X(p[0]), y: Y(p[1]), v: p[1], eb: se.errorBars ? se.errorBars[i] : null }));
+    if (spec.type === "bar") {
+      const bw = band * 0.74 / ns, y0 = Y(Math.max(0, yr[0]));
+      pts.forEach((p) => {
+        const cx = p.x + (si - (ns - 1) / 2) * bw, top = Math.min(p.y, y0), h = Math.abs(y0 - p.y);
+        s += `<rect x="${cx - bw / 2 + 2}" y="${top}" width="${Math.max(bw - 4, 2)}" height="${h}" style="fill:${tbd ? `url(#${id}${role})` : col};stroke:${col};stroke-width:2.5${tbd ? ";stroke-dasharray:6 4" : ""}"/>`;
+        s += ebx(cx, p.v, p.eb, "var(--ink)");
+        let tp = top; if (p.eb != null) tp = Math.min(tp, Y(Array.isArray(p.eb) ? p.eb[1] : p.v + p.eb));
+        s += `<text class="vlab${tbd ? " tbdv" : ""}" x="${cx}" y="${tp - 8}" text-anchor="middle">${fmtNum(p.v)}</text>`;
+      });
+    } else if (spec.type === "scatter" && role === "reference") {
+      s += `<path d="${pts.map((p, i) => (i ? "L" : "M") + p.x + " " + p.y).join("")}" style="fill:none;stroke:${col};stroke-width:2.5;stroke-dasharray:2 5;stroke-linecap:round"/>`;
+    } else {
+      if (spec.type === "line") {
+        s += `<path d="${pts.map((p, i) => (i ? "L" : "M") + p.x + " " + p.y).join("")}" style="fill:none;stroke:${col};stroke-width:${role === "reference" ? 2.5 : 4};${tbd ? "stroke-dasharray:10 7;" : ""}stroke-linejoin:round"/>`;
+      }
+      pts.forEach((p) => { s += ebx(p.x, p.v, p.eb, col) + marker(R.shape, p.x, p.y, spec.type === "scatter" ? 8 : 7, col, tbd); });
+    }
+  });
+  g += `<g clip-path="url(#${id}c)">${s}</g>`;
+
+  // annotations
+  (spec.annotations || []).forEach((a) => {
+    if (dom.kind === "cat" && dom.cats.indexOf(String(a.x)) < 0) return;
+    const ax = X(a.x), ay = Y(a.y), lines = wrapText(a.text, 20), mw = Math.max(...lines.map((l) => l.length)) * 9;
+    const end = ax > W * 0.5;
+    let tx = ax + (end ? -26 : 26); const ty = ay - 40 > m.t + 18 ? ay - 40 : ay + 44;
+    tx = end ? Math.max(tx, m.l + mw) : Math.min(tx, W - m.r - mw);
+    g += `<circle cx="${ax}" cy="${ay}" r="13" style="fill:none;stroke:var(--ink);stroke-width:2.5"/><line class="anno-line" x1="${ax + (end ? -10 : 10)}" y1="${ay + (ty < ay ? -9 : 9)}" x2="${tx + (end ? 6 : -6)}" y2="${ty - 5}"/>` +
+      `<text class="anno" x="${tx}" y="${ty}" text-anchor="${end ? "end" : "start"}">${lines.map((l, i) => `<tspan x="${tx}" dy="${i ? 18 : 0}">${esc(l)}</tspan>`).join("")}</text>`;
+  });
+
+  const label = `${spec.type} chart: ${spec.yLabel || "y"} versus ${spec.xLabel || "x"}. Series: ` + spec.series.map((se) => se.name + (se.placeholder ? " (placeholder)" : "")).join(", ");
+  const legend = spec.series.map((se) => {
+    const role = ROLE[se.role] ? se.role : "baseline", R = ROLE[role];
+    return `<li><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">${marker(spec.type === "bar" ? "square" : R.shape, 11, 11, 7, R.color, !!se.placeholder)}</svg><span>${esc(se.name)}</span><em class="role">${R.label}</em>${se.placeholder ? '<b class="tbd">TBD</b>' : ""}</li>`;
+  }).join("");
+  return `<figure class="chart${anyPH ? " is-tbd" : ""}"><figcaption><span>${esc(caption)}</span>${anyPH ? '<b class="tbd">TBD · placeholder data</b>' : ""}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${g}</svg><ul class="legend">${legend}</ul></figure>`;
+}
+
+/* ---------- pieces ---------- */
+const fmtVal = (h, v) => fmtNum(v) + (h.unit ? (/^[a-z]/i.test(h.unit) ? " " : "") + h.unit : "");
+function headlineHTML(h, big) {
+  if (!h) return "";
+  return `<div class="hl${big ? " big" : ""}${h.placeholder ? " is-tbd" : ""}"><div class="hl-label">${esc(h.label)} ${h.placeholder ? '<b class="tbd">TBD</b>' : ""}</div>` +
+    `<div class="hl-nums">${h.before != null ? `<span class="hb"><span class="sr">before </span>${esc(fmtVal(h, h.before))}</span><span class="hl-arrow" aria-hidden="true">→</span>` : ""}<span class="ha"><span class="sr">after </span>${esc(fmtVal(h, h.after))}</span></div></div>`;
+}
+function badgeHTML(p) {
+  const pv = provOf(p);
+  return `<span class="badge ${pv.cls}"><i class="g"></i>${pv.label}</span>` +
+    (p.depth === "stub" ? '<span class="badge depth">Skimmed</span>' : p.depth === "summary" ? '<span class="badge depth">Summary</span>' : "");
+}
+function depsHTML(p) {
+  return (p.dependsOn || []).map((d) => {
+    const j = PH.findIndex((x) => x.id === d);
+    if (j < 0) { console.warn("dependsOn: unknown phase id", d, "in", p.id); return ""; }
+    return `<a class="dep" href="#${esc(d)}" data-goto="${esc(d)}">builds on Phase ${j + 1}</a>`;
+  }).join("");
+}
+function beatsHTML(p) {
+  const specs = [p.pitfall && p.pitfall.evidenceChart, p.outcome && p.outcome.chart].filter(Boolean);
+  const dom = specs.length ? chartDomain(specs) : null, yr = specs.length ? yRangeFor(specs) : null;
+  let warn = "";
+  if (specs.length === 2) {
+    const a = specs[0], b = specs[1];
+    if (JSON.stringify(a.yRange) !== JSON.stringify(b.yRange) || a.yLabel !== b.yLabel || a.xLabel !== b.xLabel || a.type !== b.type) {
+      warn = `<div class="warn" role="alert">DATA WARNING: pitfall and outcome charts declare different axes, type or labels. Both are drawn on the pitfall chart's range. Fix the data.</div>`;
+      console.warn("Phase", p.id, ": evidenceChart and outcome.chart differ in yRange/labels/type");
+    }
+  }
+  let o = "";
+  if (p.baseline) o += `<section class="beat before b"><h3><span class="n">1</span>Baseline <span class="side">before</span></h3><p>${esc(p.baseline.text)}</p>${p.baseline.numbers ? `<p class="nums">${esc(p.baseline.numbers)}</p>` : ""}</section>`;
+  if (p.pitfall) o += `<section class="beat before p"><h3><span class="n">2</span>Pitfall <span class="side">before</span></h3><p>${esc(p.pitfall.text)}</p>${p.pitfall.evidenceChart ? chartHTML(p.pitfall.evidenceChart, dom, yr, "Pitfall evidence") : ""}</section>`;
+  if (p.ourMove) o += `<section class="beat after m"><h3><span class="n">3</span>Our move <span class="side">after</span></h3><p class="move">${esc(p.ourMove.text)}</p></section>`;
+  if (p.outcome) o += `<section class="beat after o"><h3><span class="n">4</span>Outcome <span class="side">after, same axes</span></h3><p>${esc(p.outcome.text)}</p>${p.outcome.chart ? chartHTML(p.outcome.chart, dom, yr, "Outcome (same axes as pitfall)") : ""}</section>`;
+  if (p.whyBetter) o += `<section class="beat w"><h3><span class="n">5</span>Why it is better</h3><p>${esc(p.whyBetter.text)}</p>${(p.whyBetter.caveats || []).length ? `<ul class="caveats">${p.whyBetter.caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}</section>`;
+  return o ? warn + `<div class="beats">${o}</div>` : "";
+}
+function sumHTML(p) {
+  const s = p.summary;
+  if (!s) return `<p class="one">${esc(p.oneLiner || "")}</p>`;
+  return `<dl class="sum"><div><dt>Problem</dt><dd>${esc(s.problem)}</dd></div><div><dt>Fix</dt><dd>${esc(s.fix)}</dd></div><div><dt>Result</dt><dd>${esc(s.result)}</dd></div></dl>`;
+}
+function phaseHTML(p, i) {
+  const open = isOpen(p), pv = provOf(p);
+  let body;
+  if (open) {
+    body = beatsHTML(p);
+    if (!body) body = (p.summary ? sumHTML(p) : `<p class="one">${esc(p.oneLiner || "")}</p>`) +
+      `<p class="hint">No further detail recorded. Add baseline, pitfall, ourMove, outcome and whyBetter to this phase.</p>`;
+  } else {
+    body = (p.depth === "stub" ? `<p class="one">${esc(p.oneLiner || "")}</p>` : sumHTML(p)) +
+      `<p class="hint">${p.depth === "stub" ? "Skimmed. " : ""}Click or press E to expand.</p>`;
+  }
+  return `<article class="phase ${pv.cls} ${open ? "open" : "collapsed"} depth-${esc(p.depth)}" id="ph-${esc(p.id)}" data-seq="${i + 1}"${open ? "" : ` data-toggle="${esc(p.id)}"`}>` +
+    `<header class="p-head"><span class="p-num" aria-hidden="true">${pad2(i + 1)}</span>` +
+    `<div><h2 class="p-title"><span class="sr">Phase ${i + 1}: </span>${esc(p.title)}</h2><div class="tags">${badgeHTML(p)}${depsHTML(p)}</div></div>` +
+    `<button type="button" class="tgl" data-toggle="${esc(p.id)}" data-fk="t-${esc(p.id)}" aria-expanded="${open}" aria-controls="body-${esc(p.id)}">${open ? "Collapse" : "Expand"} · E</button>` +
+    `<div class="p-hl">${headlineHTML(p.headline, open || state.cur === i + 1 && !state.reading)}</div></header>` +
+    `<div class="p-body" id="body-${esc(p.id)}">${body}</div></article>`;
+}
+function overviewHTML() {
+  const cnt = (d) => PH.filter((p) => p.depth === d).length;
+  return `<section class="ov" id="sec-overview" data-seq="0"><h2>${esc(PROJECT.title)}</h2><p class="sub">${esc(PROJECT.subtitle)}</p>` +
+    `<p class="claim">${esc(PROJECT.headlineClaim)}</p>` +
+    `<div class="legend-grid"><div><span class="badge prior"><i class="g"></i>Prior work</span><p>What existed before us. Ochre, square marker.</p></div>` +
+    `<div><span class="badge ours"><i class="g"></i>Our contribution</span><p>What we changed. Blue, round marker.</p></div>` +
+    `<div><span class="tbd">TBD</span> <span class="badge depth">Dashed + hatched</span><p>Placeholder data. Not a result.</p></div>` +
+    `<div><span class="badge depth">${cnt("full")} full · ${cnt("summary")} summary · ${cnt("stub")} skimmed</span><p>${N} phases. Every phase is on the rail.</p></div></div>` +
+    `<p class="start">Press → to start. E expands a phase. A expands all.</p></section>`;
+}
+function gainHTML(p) {
+  const h = p.headline; if (!h) return "—";
+  return `<span class="gain${h.placeholder ? " is-tbd" : ""}">${h.before != null ? esc(fmtVal(h, h.before)) + ' <span class="arrow">→</span> ' : ""}${esc(fmtVal(h, h.after))}${h.placeholder ? ' <b class="tbd">TBD</b>' : ""}<small>${esc(h.label)}</small></span>`;
+}
+function mapHTML() {
+  const rows = PH.map((p, i) => {
+    const pitfall = (p.pitfall && p.pitfall.text) || (p.summary && p.summary.problem) || p.oneLiner || "—";
+    const fix = (p.ourMove && p.ourMove.text) || (p.summary && p.summary.fix) || (p.provenance === "prior" ? "None (prior work, reproduced)" : "—");
+    return `<tr class="row" data-goto="${esc(p.id)}"><td><span class="ph-t">${pad2(i + 1)} ${esc(p.title)}</span>${badgeHTML(p)}<br><a class="dep" href="#${esc(p.id)}" data-goto="${esc(p.id)}">go to Phase ${i + 1} →</a></td><td>${esc(pitfall)}</td><td class="fixc">${esc(fix)}</td><td>${gainHTML(p)}</td></tr>`;
+  }).join("");
+  return `<section class="map" id="sec-map" data-seq="${N + 1}"><h2>Contribution map</h2><p class="muted">One row per phase: pitfall → our fix → measured gain. Click a row to go back to its phase.</p>` +
+    `<div class="tablewrap"><table class="cm"><thead><tr><th>Phase</th><th>Pitfall</th><th>Our fix</th><th>Measured gain</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+function railHTML() {
+  const item = (i, node, title, meta, num) => `<li><button type="button" class="r-item${state.cur === i ? " on" : ""}" data-nav="${i}" data-fk="r${i}"${state.cur === i ? ' aria-current="step"' : ""}>${node}<span><span class="r-t">${num ? `<span class="r-num">${num}</span>` : ""}${esc(title)}</span>${meta ? `<span class="r-meta">${meta}</span>` : ""}</span></button></li>`;
+  let o = item(0, '<i class="node sys"></i>', "Overview", "");
+  PH.forEach((p, i) => {
+    const pv = provOf(p), h = p.headline;
+    const meta = `<span>${pv.cls === "mixed" ? "MIXED" : pv.cls === "prior" ? "PRIOR" : "OURS"}</span>` + (p.depth === "full" ? "" : `<span>${p.depth === "stub" ? "SKIMMED" : "SUMMARY"}</span>`) +
+      (h ? `<span class="hv">${h.before != null ? esc(fmtVal(h, h.before)) + "→" : ""}${esc(fmtVal(h, h.after))}</span>${h.placeholder ? '<b class="tbd">TBD</b>' : ""}` : "");
+    o += item(i + 1, `<i class="node ${pv.cls} d-${esc(p.depth)}"></i>`, p.title, meta, pad2(i + 1));
+  });
+  o += item(N + 1, '<i class="node sys"></i>', "Contribution map", "");
+  return `<ol>${o}</ol><div class="keys"><kbd>←</kbd> <kbd>→</kbd> or <kbd>J</kbd> <kbd>K</kbd> phase<br><kbd>E</kbd> expand · <kbd>A</kbd> all · <kbd>Esc</kbd> overview</div>`;
+}
+
+/* ---------- state and navigation ---------- */
+function withFocus(fn) {
+  const a = document.activeElement, fk = a && a.dataset && a.dataset.fk;
+  fn();
+  if (fk) { const el = document.querySelector(`[data-fk="${fk}"]`); if (el) el.focus({ preventScroll: true }); }
+}
+function renderRail() { rail.innerHTML = railHTML(); }
+function renderMain() {
+  chartSeq = 0;
+  if (state.reading) main.innerHTML = overviewHTML() + PH.map(phaseHTML).join("") + mapHTML();
+  else main.innerHTML = state.cur === 0 ? overviewHTML() : state.cur === N + 1 ? mapHTML() : phaseHTML(PH[state.cur - 1], state.cur - 1);
+  observe();
+}
+function renderAll() {
+  $("#btnAll").setAttribute("aria-pressed", String(state.reading));
+  renderRail(); renderMain();
+}
+function setHash() {
+  try { history.replaceState(null, "", state.cur === 0 ? location.pathname + location.search : "#" + (state.cur === N + 1 ? "map" : PH[state.cur - 1].id)); } catch (e) { /* file:// may refuse */ }
+}
+function setCur(i, quiet) {
+  i = Math.max(0, Math.min(N + 1, i));
+  state.cur = i;
+  withFocus(() => {
+    renderRail();
+    if (state.reading) {
+      const el = document.getElementById(secId(i));
+      if (el) el.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" });
+    } else { renderMain(); window.scrollTo(0, 0); }
+  });
+  setHash();
+  if (!quiet) $("#live").textContent = i === 0 ? "Overview" : i === N + 1 ? "Contribution map" : `Phase ${i} of ${N}: ${PH[i - 1].title}`;
+}
+function gotoId(id) {
+  if (id === "map") return setCur(N + 1);
+  if (id === "overview") return setCur(0);
+  const j = PH.findIndex((p) => p.id === id);
+  if (j >= 0) setCur(j + 1);
+}
+function toggleId(id) {
+  const p = PH.find((x) => x.id === id); if (!p) return;
+  state.open[id] = !isOpen(p);
+  withFocus(() => {
+    if (state.reading) {
+      const el = document.getElementById("ph-" + id);
+      el.outerHTML = phaseHTML(p, PH.indexOf(p));
+      observe();
+    } else renderMain();
+    renderRail();
+  });
+}
+function setReading(v) {
+  state.reading = v; state.open = {};
+  withFocus(() => {
+    renderAll();
+    if (v) { const el = document.getElementById(secId(state.cur)); if (el) el.scrollIntoView({ block: "start" }); }
+    else window.scrollTo(0, 0);
+  });
+  $("#live").textContent = v ? "Expand all on: reading mode" : "Expand all off: presenting mode";
+}
+let io = null;
+function observe() {
+  if (io) io.disconnect();
+  if (!state.reading || !("IntersectionObserver" in window)) return;
+  io = new IntersectionObserver((es) => {
+    es.forEach((en) => {
+      if (!en.isIntersecting) return;
+      const s = +en.target.dataset.seq;
+      if (s !== state.cur) { state.cur = s; withFocus(renderRail); }
+    });
+  }, { rootMargin: "-15% 0px -75% 0px" });
+  main.querySelectorAll("[data-seq]").forEach((el) => io.observe(el));
+}
+
+document.addEventListener("click", (e) => {
+  const g = e.target.closest("[data-goto]"); if (g) { e.preventDefault(); gotoId(g.dataset.goto); return; }
+  const n = e.target.closest("[data-nav]"); if (n) { setCur(+n.dataset.nav); return; }
+  const t = e.target.closest("[data-toggle]"); if (t) { toggleId(t.dataset.toggle); }
+});
+$("#btnAll").addEventListener("click", () => setReading(!state.reading));
+$("#btnOverview").addEventListener("click", () => setCur(0));
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (k === "ArrowRight" || k === "j") { e.preventDefault(); setCur(state.cur + 1); }
+  else if (k === "ArrowLeft" || k === "k") { e.preventDefault(); setCur(state.cur - 1); }
+  else if (k === "a") { e.preventDefault(); setReading(!state.reading); }
+  else if (k === "Escape") { e.preventDefault(); setCur(0); }
+  else if (k === "e") {
+    e.preventDefault();
+    const art = t && t.closest && t.closest("article.phase");
+    const id = art ? art.id.slice(3) : (state.cur >= 1 && state.cur <= N ? PH[state.cur - 1].id : null);
+    if (id) toggleId(id);
+  }
+});
+window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (h) gotoId(h); });
+
+/* ---------- boot ---------- */
+document.title = PROJECT.title;
+$("#ptitle").textContent = PROJECT.title;
+(function init() {
+  const h = location.hash.slice(1);
+  if (h === "map") state.cur = N + 1;
+  else { const j = PH.findIndex((p) => p.id === h); if (j >= 0) state.cur = j + 1; }
+  renderAll();
+})();
+</script>
+</body>
+</html>
