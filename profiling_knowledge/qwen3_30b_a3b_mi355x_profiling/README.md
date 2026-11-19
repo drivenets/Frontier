@@ -4,6 +4,8 @@ Working notes for profiling Qwen3-30B-A3B's attention-layer operators on the 8×
 cluster with Frontier's `linear_op` and attention profilers. Files are numbered in the order the work happened; each
 document is self-contained and states its own date, jobs and data paths. This README is the map.
 
+**New to this work? Start with [`HANDOVER.md`](HANDOVER.md)** (status, reading order, data locations, open items; 2026-11-19).
+
 | file | what it is |
 |---|---|
 | `00_requirements_and_source_map.md` | plan-loop stages 0–2: requirements, sources, what the profilers measure |
